@@ -12,6 +12,9 @@
   <div class="icon">🏢</div>
   <h1>原状回復精算システム</h1>
   <span class="badge">恵比寿不動産</span>
+  <div style="margin-left:auto;">
+    <button class="btn" style="background:#c0392b; color:#fff; font-size:12px; padding:5px 12px;" onclick="clearLocal()">🗑 新規リセット</button>
+  </div>
 </header>
 
 <div class="container">
@@ -469,6 +472,79 @@ function parseFmt(s) {
 ['landlordRate', 'tenantRate', 'taxRate'].forEach(id => {
   document.getElementById(id).addEventListener('input', calcTotals);
 });
+
+// ========== LocalStorage 自動保存・復元 ==========
+const SAVE_KEY = 'ict_seisan_data';
+
+function saveToLocal() {
+  const items = [];
+  document.querySelectorAll('#tableBody tr').forEach(tr => {
+    const inputs = tr.querySelectorAll('input');
+    const selects = tr.querySelectorAll('select');
+    items.push({
+      category: selects[0]?.value || '',
+      description: inputs[0]?.value || '',
+      quantity: inputs[1]?.value || 0,
+      unit: inputs[2]?.value || '',
+      unit_price: inputs[3]?.value || 0,
+      burden: selects[1]?.value || '借',
+    });
+  });
+
+  const state = {
+    propertyName: document.getElementById('propertyName').value,
+    estimateNumber: document.getElementById('estimateNumber').value,
+    estimateDate: document.getElementById('estimateDate').value,
+    companyName: document.getElementById('companyName').value,
+    staffName: document.getElementById('staffName').value,
+    deposit: document.getElementById('deposit').value,
+    landlordRate: document.getElementById('landlordRate').value,
+    tenantRate: document.getElementById('tenantRate').value,
+    taxRate: document.getElementById('taxRate').value,
+    items,
+    visible: document.getElementById('sections').classList.contains('visible'),
+  };
+  localStorage.setItem(SAVE_KEY, JSON.stringify(state));
+}
+
+function loadFromLocal() {
+  const raw = localStorage.getItem(SAVE_KEY);
+  if (!raw) return;
+  try {
+    const s = JSON.parse(raw);
+    document.getElementById('propertyName').value = s.propertyName || '';
+    document.getElementById('estimateNumber').value = s.estimateNumber || '';
+    document.getElementById('estimateDate').value = s.estimateDate || '';
+    document.getElementById('companyName').value = s.companyName || '';
+    document.getElementById('staffName').value = s.staffName || '';
+    document.getElementById('deposit').value = s.deposit || '';
+    document.getElementById('landlordRate').value = s.landlordRate || '1.15';
+    document.getElementById('tenantRate').value = s.tenantRate || '1.20';
+    document.getElementById('taxRate').value = s.taxRate || '10';
+
+    if (s.items && s.items.length > 0) {
+      document.getElementById('tableBody').innerHTML = '';
+      rowCount = 0;
+      s.items.forEach(item => addRow(item));
+      document.getElementById('sections').classList.add('visible');
+      calcTotals();
+    }
+  } catch(e) {}
+}
+
+function clearLocal() {
+  if (confirm('保存データをリセットしますか？')) {
+    localStorage.removeItem(SAVE_KEY);
+    location.reload();
+  }
+}
+
+// 入力変更時に自動保存
+document.addEventListener('input', saveToLocal);
+document.addEventListener('change', saveToLocal);
+
+// ページ読み込み時に復元
+window.addEventListener('load', loadFromLocal);
 
 async function exportExcel() {
   const items = [];
