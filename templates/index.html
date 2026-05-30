@@ -60,8 +60,16 @@
       <div class="card-body">
         <div class="form-grid">
           <div class="form-group">
+            <label>借主名</label>
+            <input type="text" id="tenantName" placeholder="例：野島 靖太">
+          </div>
+          <div class="form-group">
             <label>物件名</label>
             <input type="text" id="propertyName" placeholder="例：エビスコート301">
+          </div>
+          <div class="form-group">
+            <label>物件住所</label>
+            <input type="text" id="propertyAddress" placeholder="例：東京都渋谷区東3-25-11">
           </div>
           <div class="form-group">
             <label>見積番号</label>
@@ -492,7 +500,9 @@ function saveToLocal() {
   });
 
   const state = {
+    tenantName: document.getElementById('tenantName').value,
     propertyName: document.getElementById('propertyName').value,
+    propertyAddress: document.getElementById('propertyAddress').value,
     estimateNumber: document.getElementById('estimateNumber').value,
     estimateDate: document.getElementById('estimateDate').value,
     companyName: document.getElementById('companyName').value,
@@ -512,7 +522,9 @@ function loadFromLocal() {
   if (!raw) return;
   try {
     const s = JSON.parse(raw);
+    document.getElementById('tenantName').value = s.tenantName || '';
     document.getElementById('propertyName').value = s.propertyName || '';
+    document.getElementById('propertyAddress').value = s.propertyAddress || '';
     document.getElementById('estimateNumber').value = s.estimateNumber || '';
     document.getElementById('estimateDate').value = s.estimateDate || '';
     document.getElementById('companyName').value = s.companyName || '';
@@ -562,7 +574,9 @@ async function exportExcel() {
   });
 
   const payload = {
+    tenant_name: document.getElementById('tenantName').value,
     property_name: document.getElementById('propertyName').value,
+    property_address: document.getElementById('propertyAddress').value,
     estimate_number: document.getElementById('estimateNumber').value,
     estimate_date: document.getElementById('estimateDate').value,
     company_name: document.getElementById('companyName').value,
