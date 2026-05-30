@@ -1,0 +1,530 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>原状回復精算システム｜恵比寿不動産</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+
+<header>
+  <div class="icon">🏢</div>
+  <h1>原状回復精算システム</h1>
+  <span class="badge">恵比寿不動産</span>
+</header>
+
+<div class="container">
+  <div id="alert-area"></div>
+
+  <!-- STEP 1: PDF Upload -->
+  <div class="card">
+    <div class="card-header">
+      <span class="step">1</span>
+      見積書PDF アップロード
+    </div>
+    <div class="card-body">
+      <div class="drop-zone" id="dropZone">
+        <div class="icon">📄</div>
+        <p>PDFファイルをここにドロップ<br>またはクリックして選択</p>
+        <input type="file" id="fileInput" accept=".pdf" style="display:none">
+        <button class="btn btn-secondary" onclick="document.getElementById('fileInput').click()">ファイルを選択</button>
+        <div class="file-name" id="fileName"></div>
+      </div>
+      <div style="margin-top:14px; text-align:center;">
+        <button class="btn btn-primary" id="analyzeBtn" disabled onclick="analyzeFile()">
+          🔍 Claude AIで解析する
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Spinner -->
+  <div class="spinner" id="spinner">
+    <div class="spin"></div>
+    <p>Claude AIが見積書を読み取っています...<br>少々お待ちください（10〜30秒程度）</p>
+  </div>
+
+  <!-- STEP 2 以降 -->
+  <div id="sections">
+
+    <!-- STEP 2: 物件情報 -->
+    <div class="card">
+      <div class="card-header">
+        <span class="step">2</span>
+        物件情報・基本設定
+      </div>
+      <div class="card-body">
+        <div class="form-grid">
+          <div class="form-group">
+            <label>物件名</label>
+            <input type="text" id="propertyName" placeholder="例：エビスコート301">
+          </div>
+          <div class="form-group">
+            <label>見積番号</label>
+            <input type="text" id="estimateNumber" placeholder="例：ICT-2024-0123">
+          </div>
+          <div class="form-group">
+            <label>見積日</label>
+            <input type="text" id="estimateDate" placeholder="例：2024-01-15">
+          </div>
+          <div class="form-group">
+            <label>業者名</label>
+            <input type="text" id="companyName" placeholder="例：株式会社ICT">
+          </div>
+          <div class="form-group">
+            <label>担当者</label>
+            <input type="text" id="staffName" placeholder="例：山田太郎">
+          </div>
+          <div class="form-group">
+            <label>敷金（円）</label>
+            <input type="number" id="deposit" placeholder="例：150000" min="0">
+          </div>
+        </div>
+
+        <hr style="margin: 16px 0; border-color: #eee;">
+
+        <div class="rate-grid">
+          <div class="rate-group">
+            <label>貸主掛率</label>
+            <input type="number" id="landlordRate" value="1.15" step="0.01" min="1.0" max="2.0">
+          </div>
+          <div class="rate-group">
+            <label>借主掛率</label>
+            <input type="number" id="tenantRate" value="1.20" step="0.01" min="1.0" max="2.0">
+          </div>
+          <div class="rate-group">
+            <label>消費税率</label>
+            <input type="number" id="taxRate" value="0.10" step="0.01" min="0" max="0.3">
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- STEP 3: 工事明細 -->
+    <div class="card">
+      <div class="card-header">
+        <span class="step">3</span>
+        工事明細テーブル
+        <div style="margin-left:auto; display:flex; gap:8px;">
+          <button class="btn btn-secondary" onclick="addRow()" style="padding:4px 12px; font-size:12px;">＋ 行追加</button>
+        </div>
+      </div>
+      <div class="card-body" style="padding:0;">
+        <div class="table-wrapper">
+          <table id="itemsTable">
+            <thead>
+              <tr>
+                <th style="width:36px;">No</th>
+                <th style="min-width:160px;">工事項目</th>
+                <th style="min-width:180px;">仕様備考</th>
+                <th style="width:60px;">数量</th>
+                <th style="width:50px;">単位</th>
+                <th style="width:90px;">単価（税抜）</th>
+                <th style="width:90px;">業者金額</th>
+                <th style="width:70px;">負担区分</th>
+                <th style="width:100px;">貸主請求額</th>
+                <th style="width:100px;">借主請求額</th>
+                <th style="width:44px;"></th>
+              </tr>
+            </thead>
+            <tbody id="tableBody"></tbody>
+            <tfoot>
+              <tr class="total-row">
+                <td colspan="6" class="text-right">合計（税抜）</td>
+                <td class="text-right" id="totalVendor">¥0</td>
+                <td></td>
+                <td class="text-right" id="totalLandlord">¥0</td>
+                <td class="text-right" id="totalTenant">¥0</td>
+                <td></td>
+              </tr>
+              <tr class="total-row">
+                <td colspan="6" class="text-right">合計（税込）</td>
+                <td class="text-right" id="totalVendorTax">¥0</td>
+                <td></td>
+                <td class="text-right" id="totalLandlordTax">¥0</td>
+                <td class="text-right" id="totalTenantTax">¥0</td>
+                <td></td>
+              </tr>
+              <tr class="profit-row">
+                <td colspan="11" id="profitCell" class="text-center">利益：¥0（利益率：0%）</td>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- STEP 4: サマリー -->
+    <div class="card">
+      <div class="card-header">
+        <span class="step">4</span>
+        精算サマリー
+      </div>
+      <div class="card-body">
+        <div class="summary-grid">
+          <div class="summary-card landlord">
+            <div class="label">貸主請求合計（税込）</div>
+            <div class="value" id="summaryLandlord">¥0</div>
+          </div>
+          <div class="summary-card tenant">
+            <div class="label">借主請求合計（税込）</div>
+            <div class="value" id="summaryTenant">¥0</div>
+          </div>
+          <div class="summary-card profit">
+            <div class="label">弊社利益（税抜）</div>
+            <div class="value" id="summaryProfit">¥0</div>
+          </div>
+          <div class="summary-card rate">
+            <div class="label">利益率</div>
+            <div class="value" id="summaryRate">0%</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- STEP 5: 出力 -->
+    <div class="card">
+      <div class="card-header">
+        <span class="step">5</span>
+        Excel出力
+      </div>
+      <div class="card-body">
+        <div class="action-bar">
+          <button class="btn btn-success" onclick="exportExcel()">
+            📊 精算書Excelをダウンロード
+          </button>
+        </div>
+        <p style="font-size:12px; color:#888; margin-top:10px; text-align:right;">
+          ① 見積入力シート　② 貸主請求書　③ 借主清算書　の3シート構成で出力されます
+        </p>
+      </div>
+    </div>
+
+  </div><!-- /sections -->
+</div>
+
+<script>
+const CATEGORIES = {{ categories | tojson }};
+const BURDEN_MAP = {
+  "クロス張替え（全面）": "貸",
+  "クロス張替え（部分）": "借",
+  "クッションフロア張替え": "貸",
+  "フローリング補修・部分貼替え": "両",
+  "畳替え": "両",
+  "ハウスクリーニング（基本）": "借",
+  "エアコンクリーニング": "借",
+  "浴室・強化クリーニング": "借",
+  "照明器具交換・修繕": "貸",
+  "給湯器・設備修繕": "貸",
+  "鍵交換": "借",
+  "リペア補修（床・壁複数箇所）": "借",
+  "残置物・廃棄物処分": "借",
+  "消毒・防虫処理": "借",
+  "諸経費（パーキング・交通費等）": "貸",
+  "その他（自由入力）": "借"
+};
+
+let rowCount = 0;
+
+// ドロップゾーン
+const dropZone = document.getElementById('dropZone');
+const fileInput = document.getElementById('fileInput');
+const fileName = document.getElementById('fileName');
+const analyzeBtn = document.getElementById('analyzeBtn');
+
+dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('dragover'); });
+dropZone.addEventListener('dragleave', () => dropZone.classList.remove('dragover'));
+dropZone.addEventListener('drop', e => {
+  e.preventDefault();
+  dropZone.classList.remove('dragover');
+  const file = e.dataTransfer.files[0];
+  if (file && file.type === 'application/pdf') {
+    fileInput.files = e.dataTransfer.files;
+    onFileSelected(file);
+  } else {
+    showAlert('PDFファイルのみ対応しています', 'error');
+  }
+});
+
+fileInput.addEventListener('change', () => {
+  if (fileInput.files[0]) onFileSelected(fileInput.files[0]);
+});
+
+function onFileSelected(file) {
+  fileName.textContent = '📎 ' + file.name;
+  analyzeBtn.disabled = false;
+}
+
+function showAlert(msg, type='error') {
+  const area = document.getElementById('alert-area');
+  area.innerHTML = `<div class="alert alert-${type}">${msg}</div>`;
+  setTimeout(() => area.innerHTML = '', 6000);
+}
+
+async function analyzeFile() {
+  const file = fileInput.files[0];
+  if (!file) return showAlert('PDFを選択してください', 'error');
+
+  const spinner = document.getElementById('spinner');
+  spinner.classList.add('active');
+  analyzeBtn.disabled = true;
+
+  const formData = new FormData();
+  formData.append('pdf', file);
+
+  try {
+    const res = await fetch('/api/analyze', { method: 'POST', body: formData });
+    const data = await res.json();
+
+    if (!res.ok) throw new Error(data.error || 'APIエラー');
+
+    // 物件情報を反映
+    document.getElementById('propertyName').value = data.property_name || '';
+    document.getElementById('estimateNumber').value = data.estimate_number || '';
+    document.getElementById('estimateDate').value = data.estimate_date || '';
+    document.getElementById('companyName').value = data.company_name || '';
+    document.getElementById('staffName').value = data.staff_name || '';
+
+    // テーブルクリア
+    document.getElementById('tableBody').innerHTML = '';
+    rowCount = 0;
+
+    // 明細を反映
+    (data.items || []).forEach(item => addRow(item));
+
+    document.getElementById('sections').classList.add('visible');
+    calcTotals();
+    showAlert('解析が完了しました。内容を確認・修正してください。', 'success');
+  } catch (e) {
+    showAlert('解析エラー：' + e.message, 'error');
+  } finally {
+    spinner.classList.remove('active');
+    analyzeBtn.disabled = false;
+  }
+}
+
+function makeCategoryOptions(selected) {
+  return CATEGORIES.map(c =>
+    `<option value="${c}" ${c === selected ? 'selected' : ''}>${c}</option>`
+  ).join('');
+}
+
+function addRow(item = {}) {
+  rowCount++;
+  const n = rowCount;
+  const category = item.category || 'その他（自由入力）';
+  const burden = item.burden || BURDEN_MAP[category] || '借';
+  const tbody = document.getElementById('tableBody');
+
+  const tr = document.createElement('tr');
+  tr.dataset.rowId = n;
+  updateRowClass(tr, burden);
+
+  tr.innerHTML = `
+    <td class="text-center">${n}</td>
+    <td>
+      <select class="td-select" onchange="onCategoryChange(this)">
+        ${makeCategoryOptions(category)}
+      </select>
+    </td>
+    <td><input class="td-input" type="text" value="${escHtml(item.description || '')}" oninput="calcTotals()"></td>
+    <td><input class="td-input text-right" type="number" value="${item.quantity || 0}" min="0" step="0.01" oninput="calcRow(this); calcTotals()"></td>
+    <td><input class="td-input text-center" type="text" value="${escHtml(item.unit || '')}"></td>
+    <td><input class="td-input text-right" type="number" value="${item.unit_price || 0}" min="0" oninput="calcRow(this); calcTotals()"></td>
+    <td class="text-right vendor-amount">¥0</td>
+    <td>
+      <select class="td-select burden-select text-center" onchange="onBurdenChange(this)">
+        <option value="貸" ${burden === '貸' ? 'selected' : ''}>貸</option>
+        <option value="借" ${burden === '借' ? 'selected' : ''}>借</option>
+        <option value="両" ${burden === '両' ? 'selected' : ''}>両</option>
+      </select>
+    </td>
+    <td class="text-right landlord-amount">¥0</td>
+    <td class="text-right tenant-amount">¥0</td>
+    <td class="text-center"><button class="btn btn-danger" onclick="deleteRow(this)">✕</button></td>
+  `;
+
+  tbody.appendChild(tr);
+  calcRow(tr.querySelector('input[type="number"]'));
+}
+
+function escHtml(s) {
+  return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+function deleteRow(btn) {
+  btn.closest('tr').remove();
+  renumberRows();
+  calcTotals();
+}
+
+function renumberRows() {
+  document.querySelectorAll('#tableBody tr').forEach((tr, i) => {
+    tr.cells[0].textContent = i + 1;
+  });
+}
+
+function onCategoryChange(sel) {
+  const tr = sel.closest('tr');
+  const category = sel.value;
+  const burden = BURDEN_MAP[category] || '借';
+  const burdenSel = tr.querySelector('.burden-select');
+  burdenSel.value = burden;
+  updateRowClass(tr, burden);
+  calcRow(sel);
+  calcTotals();
+}
+
+function onBurdenChange(sel) {
+  const tr = sel.closest('tr');
+  updateRowClass(tr, sel.value);
+  calcRow(sel);
+  calcTotals();
+}
+
+function updateRowClass(tr, burden) {
+  tr.classList.remove('burden-landlord', 'burden-tenant', 'burden-both');
+  if (burden === '貸') tr.classList.add('burden-landlord');
+  else if (burden === '借') tr.classList.add('burden-tenant');
+  else tr.classList.add('burden-both');
+}
+
+function getRates() {
+  return {
+    landlord: parseFloat(document.getElementById('landlordRate').value) || 1.15,
+    tenant: parseFloat(document.getElementById('tenantRate').value) || 1.20,
+    tax: parseFloat(document.getElementById('taxRate').value) || 0.10,
+  };
+}
+
+function calcRow(input) {
+  const tr = input.closest ? input.closest('tr') : input;
+  if (!tr || !tr.cells) return;
+
+  const qty = parseFloat(tr.querySelector('input[type="number"]:nth-of-type(1)') ?
+    tr.querySelectorAll('input[type="number"]')[0].value : 0) || 0;
+  const price = parseFloat(tr.querySelectorAll('input[type="number"]')[1]?.value || 0) || 0;
+  const burden = tr.querySelector('.burden-select')?.value || '借';
+  const rates = getRates();
+
+  const vendor = Math.floor(qty * price);
+  let landlordAmt = 0, tenantAmt = 0;
+
+  if (burden === '貸') {
+    landlordAmt = Math.floor(vendor * rates.landlord);
+  } else if (burden === '借') {
+    tenantAmt = Math.floor(vendor * rates.tenant);
+  } else {
+    landlordAmt = Math.floor((vendor / 2) * rates.landlord);
+    tenantAmt = Math.floor((vendor / 2) * rates.tenant);
+  }
+
+  tr.querySelector('.vendor-amount').textContent = fmt(vendor);
+  tr.querySelector('.landlord-amount').textContent = fmt(landlordAmt);
+  tr.querySelector('.tenant-amount').textContent = fmt(tenantAmt);
+}
+
+function calcTotals() {
+  const rates = getRates();
+  let vendorTotal = 0, landlordTotal = 0, tenantTotal = 0;
+
+  document.querySelectorAll('#tableBody tr').forEach(tr => {
+    calcRow(tr);
+    vendorTotal += parseFmt(tr.querySelector('.vendor-amount').textContent);
+    landlordTotal += parseFmt(tr.querySelector('.landlord-amount').textContent);
+    tenantTotal += parseFmt(tr.querySelector('.tenant-amount').textContent);
+  });
+
+  const vendorTax = Math.floor(vendorTotal * (1 + rates.tax));
+  const landlordTax = Math.floor(landlordTotal * (1 + rates.tax));
+  const tenantTax = Math.floor(tenantTotal * (1 + rates.tax));
+  const profit = (landlordTotal + tenantTotal) - vendorTotal;
+  const profitRate = vendorTotal > 0 ? (profit / vendorTotal * 100) : 0;
+
+  document.getElementById('totalVendor').textContent = fmt(vendorTotal);
+  document.getElementById('totalLandlord').textContent = fmt(landlordTotal);
+  document.getElementById('totalTenant').textContent = fmt(tenantTotal);
+  document.getElementById('totalVendorTax').textContent = fmt(vendorTax);
+  document.getElementById('totalLandlordTax').textContent = fmt(landlordTax);
+  document.getElementById('totalTenantTax').textContent = fmt(tenantTax);
+  document.getElementById('profitCell').textContent =
+    `弊社利益（税抜）：${fmt(profit)}　利益率：${profitRate.toFixed(1)}%`;
+
+  document.getElementById('summaryLandlord').textContent = fmt(landlordTax);
+  document.getElementById('summaryTenant').textContent = fmt(tenantTax);
+  document.getElementById('summaryProfit').textContent = fmt(profit);
+  document.getElementById('summaryRate').textContent = profitRate.toFixed(1) + '%';
+}
+
+function fmt(n) {
+  return '¥' + Math.round(n).toLocaleString('ja-JP');
+}
+
+function parseFmt(s) {
+  return parseInt(s.replace(/[¥,]/g, '')) || 0;
+}
+
+// 掛率変更時に再計算
+['landlordRate', 'tenantRate', 'taxRate'].forEach(id => {
+  document.getElementById(id).addEventListener('input', calcTotals);
+});
+
+async function exportExcel() {
+  const items = [];
+  document.querySelectorAll('#tableBody tr').forEach(tr => {
+    const inputs = tr.querySelectorAll('input');
+    const selects = tr.querySelectorAll('select');
+    items.push({
+      category: selects[0]?.value || '',
+      description: inputs[0]?.value || '',
+      quantity: parseFloat(inputs[1]?.value || 0),
+      unit: inputs[2]?.value || '',
+      unit_price: parseFloat(inputs[3]?.value || 0),
+      burden: selects[1]?.value || '借',
+    });
+  });
+
+  const payload = {
+    property_name: document.getElementById('propertyName').value,
+    estimate_number: document.getElementById('estimateNumber').value,
+    estimate_date: document.getElementById('estimateDate').value,
+    company_name: document.getElementById('companyName').value,
+    staff_name: document.getElementById('staffName').value,
+    deposit: parseFloat(document.getElementById('deposit').value || 0),
+    landlord_rate: parseFloat(document.getElementById('landlordRate').value),
+    tenant_rate: parseFloat(document.getElementById('tenantRate').value),
+    tax_rate: parseFloat(document.getElementById('taxRate').value),
+    items,
+  };
+
+  try {
+    const res = await fetch('/api/export', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+
+    if (!res.ok) {
+      const err = await res.json();
+      throw new Error(err.error || 'Excel出力エラー');
+    }
+
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+
+    const cd = res.headers.get('Content-Disposition') || '';
+    const match = cd.match(/filename\*?=(?:UTF-8'')?(.+)/i);
+    a.download = match ? decodeURIComponent(match[1].replace(/"/g,'')) : '精算書.xlsx';
+    a.click();
+    URL.revokeObjectURL(url);
+    showAlert('Excelをダウンロードしました', 'success');
+  } catch (e) {
+    showAlert('ダウンロードエラー：' + e.message, 'error');
+  }
+}
+</script>
+</body>
+</html>
