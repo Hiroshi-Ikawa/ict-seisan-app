@@ -563,4 +563,4 @@ def _build_tenant_sheet(ws, items, data, rate, tax_rate, deposit):
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5001))
-    app.run(debug=True, port=port, use_reloader=False)
+    app.run(host="0.0.0.0", port=port, use_reloader=False)
