@@ -256,26 +256,37 @@ def create_excel(data):
     return wb
 
 
+COMPANY_INFO = "恵比寿不動産（株式会社ライフアドバンス）　賃貸管理事業部　〒150-0011 東京都渋谷区東3丁目25-11 TOKYU REIT恵比寿ビル4F　TEL: 03-6421-0544"
+
+
 def _build_estimate_sheet(ws, data, items, landlord_rate, tenant_rate, tax_rate,
                            property_name, estimate_number, estimate_date, company_name, staff_name):
-    ws.column_dimensions["A"].width = 5
-    ws.column_dimensions["B"].width = 22
-    ws.column_dimensions["C"].width = 28
+    ws.column_dimensions["A"].width = 6
+    ws.column_dimensions["B"].width = 26
+    ws.column_dimensions["C"].width = 32
     ws.column_dimensions["D"].width = 8
     ws.column_dimensions["E"].width = 6
-    ws.column_dimensions["F"].width = 10
-    ws.column_dimensions["G"].width = 12
+    ws.column_dimensions["F"].width = 13
+    ws.column_dimensions["G"].width = 13
     ws.column_dimensions["H"].width = 8
-    ws.column_dimensions["I"].width = 12
-    ws.column_dimensions["J"].width = 12
+    ws.column_dimensions["I"].width = 14
+    ws.column_dimensions["J"].width = 14
+
+    # 発行元会社情報
+    ws.merge_cells("A1:J1")
+    co_cell = ws["A1"]
+    co_cell.value = COMPANY_INFO
+    co_cell.font = Font(name="Yu Gothic UI", size=9, color="444444")
+    co_cell.alignment = Alignment(horizontal="left", vertical="center")
+    ws.row_dimensions[1].height = 16
 
     # タイトル
-    ws.merge_cells("A1:J1")
-    title_cell = ws["A1"]
+    ws.merge_cells("A2:J2")
+    title_cell = ws["A2"]
     title_cell.value = "原状回復精算 見積入力シート"
     title_cell.font = Font(name="Yu Gothic UI", bold=True, size=14, color="1F3864")
     title_cell.alignment = Alignment(horizontal="center", vertical="center")
-    ws.row_dimensions[1].height = 30
+    ws.row_dimensions[2].height = 30
 
     # 物件情報
     info = [
@@ -285,7 +296,7 @@ def _build_estimate_sheet(ws, data, items, landlord_rate, tenant_rate, tax_rate,
         ("業者名", company_name),
         ("担当者", staff_name),
     ]
-    row = 2
+    row = 3
     for label, value in info:
         ws.cell(row=row, column=1, value=label).font = Font(name="Yu Gothic UI", bold=True, size=10)
         ws.cell(row=row, column=1).fill = PatternFill(start_color="D9E1F2", end_color="D9E1F2", fill_type="solid")
@@ -394,23 +405,30 @@ def _build_estimate_sheet(ws, data, items, landlord_rate, tenant_rate, tax_rate,
 
 
 def _build_landlord_sheet(ws, items, data, rate, tax_rate):
-    ws.column_dimensions["A"].width = 5
-    ws.column_dimensions["B"].width = 22
-    ws.column_dimensions["C"].width = 28
+    ws.column_dimensions["A"].width = 6
+    ws.column_dimensions["B"].width = 26
+    ws.column_dimensions["C"].width = 32
     ws.column_dimensions["D"].width = 8
     ws.column_dimensions["E"].width = 6
-    ws.column_dimensions["F"].width = 12
-    ws.column_dimensions["G"].width = 14
-    ws.column_dimensions["H"].width = 14
+    ws.column_dimensions["F"].width = 14
+    ws.column_dimensions["G"].width = 15
+    ws.column_dimensions["H"].width = 15
 
     ws.merge_cells("A1:H1")
-    title = ws["A1"]
+    co_cell = ws["A1"]
+    co_cell.value = COMPANY_INFO
+    co_cell.font = Font(name="Yu Gothic UI", size=9, color="444444")
+    co_cell.alignment = Alignment(horizontal="left", vertical="center")
+    ws.row_dimensions[1].height = 16
+
+    ws.merge_cells("A2:H2")
+    title = ws["A2"]
     title.value = "貸主請求書"
     title.font = Font(name="Yu Gothic UI", bold=True, size=14, color="1F3864")
     title.alignment = Alignment(horizontal="center", vertical="center")
-    ws.row_dimensions[1].height = 30
+    ws.row_dimensions[2].height = 30
 
-    row = 2
+    row = 3
     info_labels = [("物件名", data.get("property_name", "")), ("見積番号", data.get("estimate_number", "")),
                    ("業者名", data.get("company_name", "")), ("担当者", data.get("staff_name", ""))]
     for label, value in info_labels:
@@ -465,23 +483,30 @@ def _build_landlord_sheet(ws, items, data, rate, tax_rate):
 
 
 def _build_tenant_sheet(ws, items, data, rate, tax_rate, deposit):
-    ws.column_dimensions["A"].width = 5
-    ws.column_dimensions["B"].width = 22
-    ws.column_dimensions["C"].width = 28
+    ws.column_dimensions["A"].width = 6
+    ws.column_dimensions["B"].width = 26
+    ws.column_dimensions["C"].width = 32
     ws.column_dimensions["D"].width = 8
     ws.column_dimensions["E"].width = 6
-    ws.column_dimensions["F"].width = 12
-    ws.column_dimensions["G"].width = 14
-    ws.column_dimensions["H"].width = 14
+    ws.column_dimensions["F"].width = 14
+    ws.column_dimensions["G"].width = 15
+    ws.column_dimensions["H"].width = 15
 
     ws.merge_cells("A1:H1")
-    title = ws["A1"]
+    co_cell = ws["A1"]
+    co_cell.value = COMPANY_INFO
+    co_cell.font = Font(name="Yu Gothic UI", size=9, color="444444")
+    co_cell.alignment = Alignment(horizontal="left", vertical="center")
+    ws.row_dimensions[1].height = 16
+
+    ws.merge_cells("A2:H2")
+    title = ws["A2"]
     title.value = "借主清算書"
     title.font = Font(name="Yu Gothic UI", bold=True, size=14, color="1F3864")
     title.alignment = Alignment(horizontal="center", vertical="center")
-    ws.row_dimensions[1].height = 30
+    ws.row_dimensions[2].height = 30
 
-    row = 2
+    row = 3
     info_labels = [("物件名", data.get("property_name", "")), ("見積番号", data.get("estimate_number", "")),
                    ("業者名", data.get("company_name", "")), ("担当者", data.get("staff_name", ""))]
     for label, value in info_labels:

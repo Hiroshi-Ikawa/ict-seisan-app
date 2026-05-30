@@ -94,8 +94,8 @@
             <input type="number" id="tenantRate" value="1.20" step="0.01" min="1.0" max="2.0">
           </div>
           <div class="rate-group">
-            <label>消費税率</label>
-            <input type="number" id="taxRate" value="0.10" step="0.01" min="0" max="0.3">
+            <label>消費税率（%）</label>
+            <input type="number" id="taxRate" value="10" step="1" min="0" max="30">
           </div>
         </div>
       </div>
@@ -394,7 +394,7 @@ function getRates() {
   return {
     landlord: parseFloat(document.getElementById('landlordRate').value) || 1.15,
     tenant: parseFloat(document.getElementById('tenantRate').value) || 1.20,
-    tax: parseFloat(document.getElementById('taxRate').value) || 0.10,
+    tax: (parseFloat(document.getElementById('taxRate').value) || 10) / 100,
   };
 }
 
@@ -494,7 +494,7 @@ async function exportExcel() {
     deposit: parseFloat(document.getElementById('deposit').value || 0),
     landlord_rate: parseFloat(document.getElementById('landlordRate').value),
     tenant_rate: parseFloat(document.getElementById('tenantRate').value),
-    tax_rate: parseFloat(document.getElementById('taxRate').value),
+    tax_rate: (parseFloat(document.getElementById('taxRate').value) || 10) / 100,
     items,
   };
 
