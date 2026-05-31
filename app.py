@@ -209,7 +209,7 @@ def make_border():
 def apply_header_style(cell, bg_color="1F3864"):
     cell.font = Font(name="Yu Gothic UI", bold=True, color="FFFFFF", size=10)
     cell.fill = PatternFill(start_color=bg_color, end_color=bg_color, fill_type="solid")
-    cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+    cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=False)
     cell.border = make_border()
 
 
@@ -221,6 +221,15 @@ def apply_data_style(cell, bg_color=None, bold=False, align="left", number_forma
     cell.border = make_border()
     if number_format:
         cell.number_format = number_format
+
+
+def fill_row_borders(ws, row, start_col, end_col, bg_color=None):
+    """指定行の全セルに罫線と背景色を設定"""
+    for col in range(start_col, end_col + 1):
+        c = ws.cell(row=row, column=col)
+        c.border = make_border()
+        if bg_color:
+            c.fill = PatternFill(start_color=bg_color, end_color=bg_color, fill_type="solid")
 
 
 def create_excel(data):
@@ -265,7 +274,7 @@ def _build_estimate_sheet(ws, data, items, landlord_rate, tenant_rate, tax_rate,
                            tenant_name="", property_address=""):
     # 12列構成: A=No B=名称 C=施工箇所 D=数量 E=単位 F=単価 G=金額
     #           H=借主割合 I=借主金額 J=貸主割合 K=貸主金額 L=備考
-    col_w = {"A":5,"B":22,"C":14,"D":7,"E":5,"F":10,"G":12,"H":7,"I":12,"J":7,"K":12,"L":20}
+    col_w = {"A":5,"B":26,"C":20,"D":7,"E":6,"F":11,"G":13,"H":7,"I":13,"J":7,"K":13,"L":28}
     for col, w in col_w.items():
         ws.column_dimensions[col].width = w
 
@@ -430,6 +439,7 @@ def _build_estimate_sheet(ws, data, items, landlord_rate, tenant_rate, tax_rate,
         ("合計", int(vendor_total*(1+tax_rate)), int(tenant_total_ex*(1+tax_rate)), int(landlord_total_ex*(1+tax_rate))),
     ]
     for label, v_val, t_val, l_val in totals:
+        fill_row_borders(ws, r, 1, 12, "FFF2CC")
         ws.merge_cells(start_row=r, start_column=1, end_row=r, end_column=6)
         c = ws.cell(row=r, column=1, value=label)
         c.font = Font(name="Yu Gothic UI", bold=True, size=10)
@@ -440,10 +450,6 @@ def _build_estimate_sheet(ws, data, items, landlord_rate, tenant_rate, tax_rate,
             c = ws.cell(row=r, column=col, value=val)
             c.number_format = '#,##0"円"'
             apply_data_style(c, bg_color="FFF2CC", bold=True, align="right")
-        for col in [8, 10, 12]:
-            c = ws.cell(row=r, column=col)
-            c.fill = PatternFill(start_color="FFF2CC", end_color="FFF2CC", fill_type="solid")
-            c.border = make_border()
         ws.row_dimensions[r].height = 18
         r += 1
 
@@ -485,7 +491,7 @@ def _build_invoice_sheet(ws, data, items, landlord_rate, tenant_rate, tax_rate, 
     addressee    = tenant_name if mode == "tenant" else landlord_name
 
     # 列幅 (12列: A-L)
-    col_w = {"A":5,"B":22,"C":14,"D":7,"E":5,"F":10,"G":12,"H":7,"I":12,"J":7,"K":12,"L":22}
+    col_w = {"A":5,"B":26,"C":20,"D":7,"E":6,"F":11,"G":13,"H":7,"I":13,"J":7,"K":13,"L":28}
     for col, w in col_w.items():
         ws.column_dimensions[col].width = w
 
@@ -639,10 +645,11 @@ def _build_invoice_sheet(ws, data, items, landlord_rate, tenant_rate, tax_rate, 
     tax_pct = int(tax_rate * 100)
     r = 31
     for label, v_val, t_val, l_val in [
-        ("小計",          vendor_total,                  tenant_total_ex,                    landlord_total_ex),
-        (f"消費税　{tax_pct}%", int(vendor_total*tax_rate), int(tenant_total_ex*tax_rate), int(landlord_total_ex*tax_rate)),
-        ("合計",          int(vendor_total*(1+tax_rate)), int(tenant_total_ex*(1+tax_rate)), int(landlord_total_ex*(1+tax_rate))),
+        ("小計",               vendor_total,                   tenant_total_ex,                     landlord_total_ex),
+        (f"消費税　{tax_pct}%", int(vendor_total*tax_rate),     int(tenant_total_ex*tax_rate),       int(landlord_total_ex*tax_rate)),
+        ("合計",               int(vendor_total*(1+tax_rate)), int(tenant_total_ex*(1+tax_rate)),   int(landlord_total_ex*(1+tax_rate))),
     ]:
+        fill_row_borders(ws, r, 1, 12, "FFF2CC")
         ws.merge_cells(start_row=r, start_column=1, end_row=r, end_column=6)
         c = ws.cell(row=r, column=1, value=label)
         c.font = Font(name="Yu Gothic UI", bold=True, size=10)
@@ -651,10 +658,6 @@ def _build_invoice_sheet(ws, data, items, landlord_rate, tenant_rate, tax_rate, 
         for col, val in [(7,v_val),(9,t_val),(11,l_val)]:
             c = ws.cell(row=r, column=col, value=val); c.number_format = '#,##0"円"'
             apply_data_style(c, bg_color="FFF2CC", bold=True, align="right")
-        for col in [8,10,12]:
-            c = ws.cell(row=r, column=col)
-            c.fill = PatternFill(start_color="FFF2CC", end_color="FFF2CC", fill_type="solid")
-            c.border = make_border()
         ws.row_dimensions[r].height = 18; r += 1
 
     # ── Row34: 【振込先】────────────────────────────
