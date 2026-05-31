@@ -13,13 +13,14 @@
   <h1>原状回復精算システム</h1>
   <span class="badge">恵比寿不動産</span>
   <div style="margin-left:auto; display:flex; gap:8px;">
+    <button class="btn" style="background:#6a1b9a; color:#fff; font-size:12px; padding:5px 12px;" onclick="openMasterModal()">⚙️ マスター管理</button>
     <button class="btn" style="background:#2e7d32; color:#fff; font-size:12px; padding:5px 12px;" onclick="saveCase()">💾 この案件を保存</button>
     <button class="btn" style="background:#1565c0; color:#fff; font-size:12px; padding:5px 12px;" onclick="toggleHistory()">📋 案件履歴</button>
     <button class="btn" style="background:#c0392b; color:#fff; font-size:12px; padding:5px 12px;" onclick="clearLocal()">🗑 新規リセット</button>
   </div>
 </header>
 
-<!-- 案件履歴パネル -->
+<!-- 案件履歴パネル（サーバー側） -->
 <div id="historyPanel" style="display:none; position:fixed; top:0; right:0; width:380px; height:100vh; background:#fff; box-shadow:-4px 0 16px rgba(0,0,0,0.2); z-index:1000; overflow-y:auto; padding:0;">
   <div style="background:#1F3864; color:#fff; padding:14px 16px; display:flex; align-items:center; justify-content:space-between;">
     <span style="font-weight:bold; font-size:14px;">📋 案件履歴</span>
@@ -28,6 +29,64 @@
   <div id="historyList" style="padding:12px;"></div>
 </div>
 <div id="historyOverlay" style="display:none; position:fixed; top:0; left:0; width:100vw; height:100vh; background:rgba(0,0,0,0.3); z-index:999;" onclick="toggleHistory()"></div>
+
+<!-- マスター管理モーダル -->
+<div id="masterModal" style="display:none; position:fixed; top:0; left:0; width:100vw; height:100vh; background:rgba(0,0,0,0.5); z-index:2000; align-items:center; justify-content:center;">
+  <div style="background:#fff; border-radius:10px; width:600px; max-width:96vw; max-height:88vh; overflow-y:auto; padding:0; box-shadow:0 8px 40px rgba(0,0,0,0.3);">
+    <div style="background:#6a1b9a; color:#fff; padding:14px 20px; display:flex; align-items:center; justify-content:space-between; border-radius:10px 10px 0 0;">
+      <span style="font-weight:bold; font-size:15px;">⚙️ マスターデータ管理</span>
+      <button onclick="closeMasterModal()" style="background:none; border:none; color:#fff; font-size:20px; cursor:pointer;">✕</button>
+    </div>
+    <div style="padding:16px;">
+      <div style="display:flex; gap:0; border-bottom:2px solid #e0e0e0; margin-bottom:16px;">
+        <button onclick="switchMasterTab('staff')" id="masterTab_staff" class="master-tab active">スタッフ</button>
+        <button onclick="switchMasterTab('landlords')" id="masterTab_landlords" class="master-tab">貸主</button>
+        <button onclick="switchMasterTab('tenants')" id="masterTab_tenants" class="master-tab">借主</button>
+      </div>
+      <!-- スタッフ -->
+      <div id="masterPane_staff">
+        <div style="margin-bottom:10px; display:flex; gap:8px;">
+          <input type="text" id="newStaffName" placeholder="スタッフ名" style="flex:1; padding:7px; border:1px solid #ccc; border-radius:4px;">
+          <button class="btn btn-primary" onclick="addMaster('staff')" style="padding:6px 14px; font-size:12px;">追加</button>
+        </div>
+        <div id="masterList_staff" style="max-height:300px; overflow-y:auto;"></div>
+      </div>
+      <!-- 貸主 -->
+      <div id="masterPane_landlords" style="display:none;">
+        <div style="margin-bottom:10px; display:grid; grid-template-columns:1fr 1fr; gap:6px;">
+          <input type="text" id="newLandlordName" placeholder="貸主名 *" style="padding:7px; border:1px solid #ccc; border-radius:4px; grid-column:1/-1;">
+          <input type="text" id="newLandlordAddress" placeholder="住所" style="padding:7px; border:1px solid #ccc; border-radius:4px;">
+          <input type="text" id="newLandlordPhone" placeholder="電話番号" style="padding:7px; border:1px solid #ccc; border-radius:4px;">
+          <button class="btn btn-primary" onclick="addMaster('landlords')" style="grid-column:1/-1; padding:6px; font-size:12px;">追加</button>
+        </div>
+        <div id="masterList_landlords" style="max-height:280px; overflow-y:auto;"></div>
+      </div>
+      <!-- 借主 -->
+      <div id="masterPane_tenants" style="display:none;">
+        <div style="margin-bottom:10px; display:grid; grid-template-columns:1fr 1fr; gap:6px;">
+          <input type="text" id="newTenantName" placeholder="借主名 *" style="padding:7px; border:1px solid #ccc; border-radius:4px;">
+          <input type="text" id="newTenantPhone" placeholder="電話番号" style="padding:7px; border:1px solid #ccc; border-radius:4px;">
+          <button class="btn btn-primary" onclick="addMaster('tenants')" style="grid-column:1/-1; padding:6px; font-size:12px;">追加</button>
+        </div>
+        <div id="masterList_tenants" style="max-height:300px; overflow-y:auto;"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<style>
+.master-tab {
+  padding: 8px 20px; border: none; background: none; cursor: pointer;
+  font-size: 13px; color: #555; border-bottom: 3px solid transparent;
+  margin-bottom: -2px;
+}
+.master-tab.active { color: #6a1b9a; border-bottom-color: #6a1b9a; font-weight: bold; }
+.master-list-row {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 6px 10px; border-bottom: 1px solid #eee; font-size: 12px;
+}
+.master-list-row:hover { background: #f5f5f5; }
+</style>
 
 <div class="container">
   <div id="alert-area"></div>
@@ -105,11 +164,21 @@
         <div class="form-grid">
           <div class="form-group">
             <label>借主名</label>
-            <input type="text" id="tenantName" placeholder="例：野島 靖太">
+            <div style="display:flex; gap:4px;">
+              <select id="tenantNameSelect" onchange="onTenantSelect(this)" style="flex:1; padding:7px; border:1px solid #ccc; border-radius:4px; font-size:13px;">
+                <option value="">-- 選択 --</option>
+              </select>
+              <input type="text" id="tenantName" placeholder="または手入力" style="flex:2;" oninput="saveToLocal()">
+            </div>
           </div>
           <div class="form-group">
             <label>貸主名</label>
-            <input type="text" id="landlordName" placeholder="例：吉川 景行">
+            <div style="display:flex; gap:4px;">
+              <select id="landlordNameSelect" onchange="onLandlordSelect(this)" style="flex:1; padding:7px; border:1px solid #ccc; border-radius:4px; font-size:13px;">
+                <option value="">-- 選択 --</option>
+              </select>
+              <input type="text" id="landlordName" placeholder="または手入力" style="flex:2;" oninput="saveToLocal()">
+            </div>
           </div>
           <div class="form-group">
             <label>物件名</label>
@@ -133,7 +202,12 @@
           </div>
           <div class="form-group">
             <label>担当者</label>
-            <input type="text" id="staffName" placeholder="例：山田太郎">
+            <div style="display:flex; gap:4px;">
+              <select id="staffNameSelect" onchange="onStaffSelect(this)" style="flex:1; padding:7px; border:1px solid #ccc; border-radius:4px; font-size:13px;">
+                <option value="">-- 選択 --</option>
+              </select>
+              <input type="text" id="staffName" placeholder="または手入力" style="flex:2;" oninput="saveToLocal()">
+            </div>
           </div>
           <div class="form-group">
             <label>月額賃料（円）</label>
@@ -208,7 +282,7 @@
                 <th style="width:50px;">単位</th>
                 <th style="width:90px;">単価（税抜）</th>
                 <th style="width:90px;">業者金額</th>
-                <th style="width:70px;">負担区分</th>
+                <th style="width:90px;">負担区分</th>
                 <th style="width:100px;">貸主請求額</th>
                 <th style="width:100px;">借主請求額</th>
                 <th style="width:44px;"></th>
@@ -269,6 +343,22 @@
       </div>
     </div>
 
+    <!-- 通知文・報告文生成 -->
+    <div class="card">
+      <div class="card-header">✉️ 通知文・報告文を自動生成</div>
+      <div class="card-body">
+        <div style="display:flex; gap:8px; flex-wrap:wrap;">
+          <button class="btn btn-secondary" onclick="generateMsg('tenant')" style="font-size:12px;">借主向け通知文</button>
+          <button class="btn btn-secondary" onclick="generateMsg('landlord')" style="font-size:12px;">貸主向け報告文</button>
+          <button class="btn btn-secondary" onclick="generateMsg('internal')" style="font-size:12px;">社内共有文（LINE WORKS）</button>
+        </div>
+        <div id="msgResult" style="margin-top:12px; display:none;">
+          <textarea id="msgText" rows="8" style="width:100%; font-size:13px; padding:8px; border:1px solid #ccc; border-radius:4px;"></textarea>
+          <button class="btn btn-secondary" onclick="navigator.clipboard.writeText(document.getElementById('msgText').value)" style="margin-top:6px; font-size:12px;">📋 コピー</button>
+        </div>
+      </div>
+    </div>
+
     <!-- STEP 5: リノベーション提案書 -->
     <div class="card" style="border-left:4px solid #2e7d32;">
       <div class="card-header" style="background:#2e7d32;">
@@ -290,13 +380,19 @@
     <div class="card">
       <div class="card-header">
         <span class="step">6</span>
-        Excel出力
+        Excel出力 / PDF印刷
       </div>
       <div class="card-body">
         <div id="depositAlert" style="margin-bottom:10px;"></div>
-        <div class="action-bar">
+        <div class="action-bar" style="display:flex; gap:10px; flex-wrap:wrap;">
           <button class="btn btn-success" onclick="exportExcel()">
             📊 精算書Excelをダウンロード
+          </button>
+          <button class="btn" style="background:#e65100; color:#fff;" onclick="printInvoice('tenant')">
+            🖨️ 借主請求書を印刷
+          </button>
+          <button class="btn" style="background:#1565c0; color:#fff;" onclick="printInvoice('landlord')">
+            🖨️ 貸主請求書を印刷
           </button>
         </div>
         <p style="font-size:12px; color:#888; margin-top:10px; text-align:right;">
@@ -330,9 +426,155 @@ const BURDEN_MAP = {
 };
 
 let rowCount = 0;
-let contractBurdens = {};  // 契約書から取得した負担区分
+let contractBurdens = {};
+let currentCaseId = null;  // サーバー側に保存された案件ID
 
-// ── 契約書解析 ─────────────────────────────────
+// ── マスターデータ ─────────────────────────────────────────────────────
+let masterData = { staff: [], landlords: [], tenants: [] };
+
+async function loadAllMasters() {
+  try {
+    const [staff, landlords, tenants] = await Promise.all([
+      fetch('/api/masters/staff').then(r => r.json()),
+      fetch('/api/masters/landlords').then(r => r.json()),
+      fetch('/api/masters/tenants').then(r => r.json()),
+    ]);
+    masterData.staff = Array.isArray(staff) ? staff : [];
+    masterData.landlords = Array.isArray(landlords) ? landlords : [];
+    masterData.tenants = Array.isArray(tenants) ? tenants : [];
+    rebuildDropdowns();
+  } catch(e) {
+    console.warn('マスター読み込み失敗:', e);
+  }
+}
+
+function rebuildDropdowns() {
+  // スタッフ
+  const staffSel = document.getElementById('staffNameSelect');
+  staffSel.innerHTML = '<option value="">-- 選択 --</option>' +
+    masterData.staff.map(s => `<option value="${escHtml(s.name)}">${escHtml(s.name)}</option>`).join('');
+
+  // 貸主
+  const landlordSel = document.getElementById('landlordNameSelect');
+  landlordSel.innerHTML = '<option value="">-- 選択 --</option>' +
+    masterData.landlords.map(s => `<option value="${s.id}">${escHtml(s.name)}</option>`).join('');
+
+  // 借主
+  const tenantSel = document.getElementById('tenantNameSelect');
+  tenantSel.innerHTML = '<option value="">-- 選択 --</option>' +
+    masterData.tenants.map(s => `<option value="${escHtml(s.name)}">${escHtml(s.name)}</option>`).join('');
+}
+
+function onStaffSelect(sel) {
+  if (sel.value) document.getElementById('staffName').value = sel.value;
+  saveToLocal();
+}
+
+function onLandlordSelect(sel) {
+  const id = parseInt(sel.value);
+  const found = masterData.landlords.find(l => l.id === id);
+  if (found) {
+    document.getElementById('landlordName').value = found.name;
+    if (found.address) document.getElementById('propertyAddress').value = found.address;
+  }
+  saveToLocal();
+}
+
+function onTenantSelect(sel) {
+  if (sel.value) document.getElementById('tenantName').value = sel.value;
+  saveToLocal();
+}
+
+// ── マスター管理モーダル ──────────────────────────────────────────────
+
+function openMasterModal() {
+  document.getElementById('masterModal').style.display = 'flex';
+  switchMasterTab('staff');
+  loadMasterList('staff');
+}
+
+function closeMasterModal() {
+  document.getElementById('masterModal').style.display = 'none';
+  loadAllMasters();  // ドロップダウンを更新
+}
+
+function switchMasterTab(tab) {
+  ['staff','landlords','tenants'].forEach(t => {
+    document.getElementById('masterPane_' + t).style.display = t === tab ? 'block' : 'none';
+    document.getElementById('masterTab_' + t).classList.toggle('active', t === tab);
+  });
+  loadMasterList(tab);
+}
+
+async function loadMasterList(type) {
+  try {
+    const res = await fetch('/api/masters/' + type);
+    const data = await res.json();
+    const el = document.getElementById('masterList_' + type);
+    if (!Array.isArray(data) || data.length === 0) {
+      el.innerHTML = '<div style="color:#aaa; text-align:center; padding:16px; font-size:12px;">データがありません</div>';
+      return;
+    }
+    el.innerHTML = data.map(row => {
+      let sub = '';
+      if (type === 'landlords') sub = (row.address ? row.address : '') + (row.phone ? '　' + row.phone : '');
+      if (type === 'tenants')   sub = row.phone || '';
+      return `<div class="master-list-row">
+        <div>
+          <span style="font-weight:bold;">${escHtml(row.name)}</span>
+          ${sub ? `<span style="color:#888; margin-left:8px; font-size:11px;">${escHtml(sub)}</span>` : ''}
+        </div>
+        <button onclick="deleteMaster('${type}', ${row.id})" style="background:#e53935; color:#fff; border:none; border-radius:4px; padding:2px 8px; font-size:11px; cursor:pointer;">削除</button>
+      </div>`;
+    }).join('');
+  } catch(e) {
+    document.getElementById('masterList_' + type).innerHTML = '<div style="color:red; font-size:12px; padding:8px;">読み込みエラー</div>';
+  }
+}
+
+async function addMaster(type) {
+  let body = {};
+  if (type === 'staff') {
+    body.name = document.getElementById('newStaffName').value.trim();
+    if (!body.name) return showAlert('名前を入力してください', 'error');
+  } else if (type === 'landlords') {
+    body.name    = document.getElementById('newLandlordName').value.trim();
+    body.address = document.getElementById('newLandlordAddress').value.trim();
+    body.phone   = document.getElementById('newLandlordPhone').value.trim();
+    if (!body.name) return showAlert('貸主名を入力してください', 'error');
+  } else if (type === 'tenants') {
+    body.name  = document.getElementById('newTenantName').value.trim();
+    body.phone = document.getElementById('newTenantPhone').value.trim();
+    if (!body.name) return showAlert('借主名を入力してください', 'error');
+  }
+  try {
+    const res = await fetch('/api/masters/' + type, {
+      method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(body)
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || '追加エラー');
+    // フォームクリア
+    if (type === 'staff') document.getElementById('newStaffName').value = '';
+    if (type === 'landlords') { document.getElementById('newLandlordName').value = ''; document.getElementById('newLandlordAddress').value = ''; document.getElementById('newLandlordPhone').value = ''; }
+    if (type === 'tenants') { document.getElementById('newTenantName').value = ''; document.getElementById('newTenantPhone').value = ''; }
+    loadMasterList(type);
+  } catch(e) {
+    showAlert('追加エラー: ' + e.message, 'error');
+  }
+}
+
+async function deleteMaster(type, id) {
+  if (!confirm('削除しますか？')) return;
+  try {
+    const res = await fetch(`/api/masters/${type}/${id}`, { method: 'DELETE' });
+    if (!res.ok) { const d = await res.json(); throw new Error(d.error || '削除エラー'); }
+    loadMasterList(type);
+  } catch(e) {
+    showAlert('削除エラー: ' + e.message, 'error');
+  }
+}
+
+// ── 契約書解析 ─────────────────────────────────────────────────────────
 const contractInput = document.getElementById('contractInput');
 const contractDropZone = document.getElementById('contractDropZone');
 const contractBtn = document.getElementById('contractBtn');
@@ -369,19 +611,16 @@ async function analyzeContract() {
 
     contractBurdens = data.burden_assignments || {};
 
-    // 借主名・貸主名・物件名を自動入力
     if (data.tenant_name) document.getElementById('tenantName').value = data.tenant_name;
     if (data.landlord_name) document.getElementById('landlordName').value = data.landlord_name;
     if (data.property_name && !document.getElementById('propertyName').value)
       document.getElementById('propertyName').value = data.property_name;
 
-    // 特約表示
     const clauses = data.special_clauses || [];
     document.getElementById('specialClauses').innerHTML =
       '<strong>📌 抽出された特約：</strong><br>' +
       (clauses.length ? clauses.map(c => `・${c}`).join('<br>') : '特約の明記なし → 全項目を東京都ガイドラインで判定');
 
-    // 負担区分テーブル
     const rows = Object.entries(contractBurdens).map(([cat, info]) => {
       const color = info.burden === '借' ? '#fce4d6' : (info.burden === '貸' ? '#d9e1f2' : '#e2efda');
       const badge = info.basis === '契約特約' ? '<span style="background:#e53935;color:#fff;padding:1px 5px;border-radius:3px;font-size:10px;">特約</span>' :
@@ -470,18 +709,15 @@ async function analyzeFile() {
 
     if (!res.ok) throw new Error(data.error || 'APIエラー');
 
-    // 物件情報を反映
     document.getElementById('propertyName').value = data.property_name || '';
     document.getElementById('estimateNumber').value = data.estimate_number || '';
     document.getElementById('estimateDate').value = data.estimate_date || '';
     document.getElementById('companyName').value = data.company_name || '';
     document.getElementById('staffName').value = data.staff_name || '';
 
-    // テーブルクリア
     document.getElementById('tableBody').innerHTML = '';
     rowCount = 0;
 
-    // 明細を反映
     (data.items || []).forEach(item => addRow(item));
 
     document.getElementById('sections').classList.add('visible');
@@ -501,11 +737,26 @@ function makeCategoryOptions(selected) {
   ).join('');
 }
 
+// ── 負担区分のデフォルトratio ────────────────────────────────────────
+function burdenToRatios(burden) {
+  if (burden === '借') return { t: 100, l: 0 };
+  if (burden === '貸') return { t: 0, l: 100 };
+  if (burden === '両') return { t: 50, l: 50 };
+  return { t: 50, l: 50 };
+}
+
 function addRow(item = {}) {
   rowCount++;
   const n = rowCount;
   const category = item.category || 'その他（自由入力）';
   const burden = item.burden || BURDEN_MAP[category] || '借';
+  const defaultRatios = burdenToRatios(burden);
+  const tRatio = item.tenant_ratio !== undefined ? item.tenant_ratio : defaultRatios.t;
+  const lRatio = item.landlord_ratio !== undefined ? item.landlord_ratio : defaultRatios.l;
+  // カスタムかどうか
+  const isCustom = item.tenant_ratio !== undefined && !(tRatio === 100 && lRatio === 0) && !(tRatio === 0 && lRatio === 100) && !(tRatio === 50 && lRatio === 50);
+  const burdenValue = isCustom ? 'カスタム' : burden;
+
   const tbody = document.getElementById('tableBody');
 
   const tr = document.createElement('tr');
@@ -526,10 +777,15 @@ function addRow(item = {}) {
     <td class="text-right vendor-amount">¥0</td>
     <td>
       <select class="td-select burden-select text-center" onchange="onBurdenChange(this)">
-        <option value="貸" ${burden === '貸' ? 'selected' : ''}>貸</option>
-        <option value="借" ${burden === '借' ? 'selected' : ''}>借</option>
-        <option value="両" ${burden === '両' ? 'selected' : ''}>両</option>
+        <option value="貸" ${burdenValue === '貸' ? 'selected' : ''}>貸</option>
+        <option value="借" ${burdenValue === '借' ? 'selected' : ''}>借</option>
+        <option value="両" ${burdenValue === '両' ? 'selected' : ''}>両</option>
+        <option value="カスタム" ${burdenValue === 'カスタム' ? 'selected' : ''}>カスタム</option>
       </select>
+      <div class="custom-ratio" style="display:${burdenValue==='カスタム'?'flex':'none'}; gap:2px; margin-top:3px; align-items:center; font-size:11px;">
+        借<input type="number" class="tenant-ratio-input" value="${tRatio}" min="0" max="100" style="width:44px; padding:2px 4px; border:1px solid #ccc; border-radius:3px; font-size:11px;" oninput="onTenantRatioInput(this)">%
+        貸<input type="number" class="landlord-ratio-input" value="${lRatio}" min="0" max="100" style="width:44px; padding:2px 4px; border:1px solid #ccc; border-radius:3px; font-size:11px;" oninput="onLandlordRatioInput(this)">%
+      </div>
     </td>
     <td class="text-right landlord-amount">¥0</td>
     <td class="text-right tenant-amount">¥0</td>
@@ -540,8 +796,26 @@ function addRow(item = {}) {
   calcRow(tr.querySelector('input[type="number"]'));
 }
 
+function onTenantRatioInput(input) {
+  const tr = input.closest('tr');
+  const tVal = parseFloat(input.value) || 0;
+  const lInput = tr.querySelector('.landlord-ratio-input');
+  lInput.value = Math.max(0, 100 - tVal);
+  calcRow(tr.querySelector('input[type="number"]'));
+  calcTotals();
+}
+
+function onLandlordRatioInput(input) {
+  const tr = input.closest('tr');
+  const lVal = parseFloat(input.value) || 0;
+  const tInput = tr.querySelector('.tenant-ratio-input');
+  tInput.value = Math.max(0, 100 - lVal);
+  calcRow(tr.querySelector('input[type="number"]'));
+  calcTotals();
+}
+
 function escHtml(s) {
-  return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
 
 function deleteRow(btn) {
@@ -562,6 +836,11 @@ function onCategoryChange(sel) {
   const burden = BURDEN_MAP[category] || '借';
   const burdenSel = tr.querySelector('.burden-select');
   burdenSel.value = burden;
+  // カスタムを閉じてデフォルトratioを設定
+  const ratios = burdenToRatios(burden);
+  tr.querySelector('.tenant-ratio-input').value = ratios.t;
+  tr.querySelector('.landlord-ratio-input').value = ratios.l;
+  tr.querySelector('.custom-ratio').style.display = 'none';
   updateRowClass(tr, burden);
   calcRow(sel);
   calcTotals();
@@ -569,7 +848,20 @@ function onCategoryChange(sel) {
 
 function onBurdenChange(sel) {
   const tr = sel.closest('tr');
-  updateRowClass(tr, sel.value);
+  const burden = sel.value;
+  const customDiv = tr.querySelector('.custom-ratio');
+  if (burden === 'カスタム') {
+    customDiv.style.display = 'flex';
+    tr.querySelector('.tenant-ratio-input').value = 50;
+    tr.querySelector('.landlord-ratio-input').value = 50;
+    updateRowClass(tr, '両');
+  } else {
+    customDiv.style.display = 'none';
+    const ratios = burdenToRatios(burden);
+    tr.querySelector('.tenant-ratio-input').value = ratios.t;
+    tr.querySelector('.landlord-ratio-input').value = ratios.l;
+    updateRowClass(tr, burden);
+  }
   calcRow(sel);
   calcTotals();
 }
@@ -593,22 +885,26 @@ function calcRow(input) {
   const tr = input.closest ? input.closest('tr') : input;
   if (!tr || !tr.cells) return;
 
-  const qty = parseFloat(tr.querySelector('input[type="number"]:nth-of-type(1)') ?
-    tr.querySelectorAll('input[type="number"]')[0].value : 0) || 0;
+  const qty = parseFloat(tr.querySelectorAll('input[type="number"]')[0]?.value || 0) || 0;
   const price = parseFloat(tr.querySelectorAll('input[type="number"]')[1]?.value || 0) || 0;
   const burden = tr.querySelector('.burden-select')?.value || '借';
   const rates = getRates();
+  const tRatio = parseFloat(tr.querySelector('.tenant-ratio-input')?.value || 0) || 0;
+  const lRatio = parseFloat(tr.querySelector('.landlord-ratio-input')?.value || 0) || 0;
 
   const vendor = Math.floor(qty * price);
   let landlordAmt = 0, tenantAmt = 0;
 
-  if (burden === '貸') {
+  if (burden === 'カスタム') {
+    tenantAmt   = Math.floor(vendor * (tRatio / 100) * rates.tenant);
+    landlordAmt = Math.floor(vendor * (lRatio / 100) * rates.landlord);
+  } else if (burden === '貸') {
     landlordAmt = Math.floor(vendor * rates.landlord);
   } else if (burden === '借') {
     tenantAmt = Math.floor(vendor * rates.tenant);
-  } else {
+  } else {  // 両
     landlordAmt = Math.floor((vendor / 2) * rates.landlord);
-    tenantAmt = Math.floor((vendor / 2) * rates.tenant);
+    tenantAmt   = Math.floor((vendor / 2) * rates.tenant);
   }
 
   tr.querySelector('.vendor-amount').textContent = fmt(vendor);
@@ -645,9 +941,10 @@ function calcTotals() {
   document.getElementById('summaryLandlord').textContent = fmt(landlordTax);
   document.getElementById('summaryTenant').textContent = fmt(tenantTax);
   document.getElementById('summaryProfit').textContent = fmt(profit);
-  document.getElementById('summaryRate').textContent = profitRate.toFixed(1) + '%';
+  const summaryRateEl = document.getElementById('summaryRate');
+  if (summaryRateEl) summaryRateEl.textContent = profitRate.toFixed(1) + '%';
 
-  // 敷金残高判定（有効敷金ベース）
+  // 敷金残高判定
   const deposit = parseFloat(document.getElementById('deposit').value || 0) || 0;
   const effective = getEffectiveDeposit();
   const holder = document.getElementById('depositHolder')?.value || 'landlord';
@@ -679,15 +976,14 @@ function fmt(n) {
 }
 
 function parseFmt(s) {
-  return parseInt(s.replace(/[¥,]/g, '')) || 0;
+  return parseInt(String(s).replace(/[¥,]/g, '')) || 0;
 }
 
-// 掛率変更時に再計算
 ['landlordRate', 'tenantRate', 'taxRate'].forEach(id => {
   document.getElementById(id).addEventListener('input', calcTotals);
 });
 
-// ========== 敷金計算 ==========
+// ── 敷金計算 ────────────────────────────────────────────────────────────
 function calcDeposit() {
   const deposit = parseFloat(document.getElementById('deposit').value || 0) || 0;
   const monthlyRent = parseFloat(document.getElementById('monthlyRent').value || 0) || 0;
@@ -716,9 +1012,9 @@ function getEffectiveDeposit() {
   return Math.max(0, deposit - Math.floor(monthlyRent * amortMonths));
 }
 
-window.addEventListener('load', () => { loadFromLocal(); calcDeposit(); });
+window.addEventListener('load', () => { loadFromLocal(); calcDeposit(); loadAllMasters(); });
 
-// ========== リノベーション提案書 ==========
+// ── リノベーション提案書 ─────────────────────────────────────────────────
 let proposalCount = 0;
 const PROPOSAL_TEMPLATES = [
   { title: 'アクセントクロス', work: 'リビング1面にアクセントクロス施工（サンゲツ等）', effect: '部屋の印象向上・ポータル写真映え' },
@@ -774,7 +1070,6 @@ function addProposal(template = {}) {
   `;
   list.appendChild(div);
 
-  // 写真プレビュー
   document.getElementById(`p_photo_${idx}`).addEventListener('change', function() {
     const el = document.getElementById(`p_photo_preview_${idx}`);
     el.textContent = this.files[0] ? '✓ ' + this.files[0].name : '';
@@ -816,86 +1111,136 @@ function updateProposalSummary() {
   }
 }
 
-// ========== 案件履歴 ==========
-const HISTORY_KEY = 'ict_seisan_history';
+// ── 案件履歴（サーバー側） ────────────────────────────────────────────────
 
-function getHistory() {
-  try { return JSON.parse(localStorage.getItem(HISTORY_KEY) || '[]'); } catch(e) { return []; }
+function getEffectiveDepositValue() {
+  return getEffectiveDeposit();
 }
 
-function saveCase() {
-  const name = document.getElementById('propertyName').value || '（物件名未入力）';
-  const tenant = document.getElementById('tenantName').value || '';
+async function saveCase() {
   const state = buildState();
   if (!state.items || state.items.length === 0) {
     showAlert('明細が空です。先に解析または入力してください。', 'error');
     return;
   }
-  const history = getHistory();
-  const entry = {
-    id: Date.now(),
-    saved_at: new Date().toLocaleString('ja-JP', {month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'}),
-    property_name: name,
-    tenant_name: tenant,
-    data: state,
-  };
-  history.unshift(entry);
-  if (history.length > 50) history.pop();
-  localStorage.setItem(HISTORY_KEY, JSON.stringify(history));
-  showAlert(`「${name}」を履歴に保存しました`, 'success');
-  renderHistory();
-}
-
-function loadCase(id) {
-  const history = getHistory();
-  const entry = history.find(h => h.id === id);
-  if (!entry) return;
-  const s = entry.data;
-  document.getElementById('tenantName').value = s.tenantName || '';
-  document.getElementById('propertyName').value = s.propertyName || '';
-  document.getElementById('propertyAddress').value = s.propertyAddress || '';
-  document.getElementById('estimateNumber').value = s.estimateNumber || '';
-  document.getElementById('estimateDate').value = s.estimateDate || '';
-  document.getElementById('companyName').value = s.companyName || '';
-  document.getElementById('staffName').value = s.staffName || '';
-  document.getElementById('deposit').value = s.deposit || '';
-  document.getElementById('landlordRate').value = s.landlordRate || '1.15';
-  document.getElementById('tenantRate').value = s.tenantRate || '1.20';
-  document.getElementById('taxRate').value = s.taxRate || '10';
-  if (s.items && s.items.length > 0) {
-    document.getElementById('tableBody').innerHTML = '';
-    rowCount = 0;
-    s.items.forEach(item => addRow(item));
-    document.getElementById('sections').classList.add('visible');
-    calcTotals();
+  try {
+    let url = '/api/cases';
+    let method = 'POST';
+    if (currentCaseId) {
+      url = `/api/cases/${currentCaseId}`;
+      method = 'PUT';
+    }
+    const res = await fetch(url, {
+      method,
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(state),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || '保存エラー');
+    if (data.id) currentCaseId = data.id;
+    showAlert(`「${state.property_name || '（物件名未入力）'}」を保存しました（ID: ${currentCaseId}）`, 'success');
+  } catch(e) {
+    showAlert('保存エラー: ' + e.message, 'error');
   }
-  toggleHistory();
-  showAlert(`「${entry.property_name}」を読み込みました`, 'success');
 }
 
-function deleteCase(id) {
-  let history = getHistory();
-  history = history.filter(h => h.id !== id);
-  localStorage.setItem(HISTORY_KEY, JSON.stringify(history));
-  renderHistory();
+async function loadCase(id) {
+  try {
+    const res = await fetch(`/api/cases/${id}`);
+    const entry = await res.json();
+    if (!res.ok) throw new Error(entry.error || '読み込みエラー');
+    const s = entry.data || {};
+    currentCaseId = id;
+
+    document.getElementById('tenantName').value = s.tenant_name || '';
+    document.getElementById('landlordName').value = s.landlord_name || '';
+    document.getElementById('propertyName').value = s.property_name || '';
+    document.getElementById('propertyAddress').value = s.property_address || '';
+    document.getElementById('estimateNumber').value = s.estimate_number || '';
+    document.getElementById('estimateDate').value = s.estimate_date || '';
+    document.getElementById('companyName').value = s.company_name || '';
+    document.getElementById('staffName').value = s.staff_name || '';
+    document.getElementById('deposit').value = s.deposit || '';
+    document.getElementById('monthlyRent').value = s.monthly_rent || '';
+    document.getElementById('amortizationMonths').value = s.amortization_months || '';
+    if (s.deposit_holder) document.getElementById('depositHolder').value = s.deposit_holder;
+    calcDeposit();
+    document.getElementById('landlordRate').value = s.landlord_rate || '1.15';
+    document.getElementById('tenantRate').value = s.tenant_rate || '1.20';
+    document.getElementById('taxRate').value = s.tax_rate ? String(parseFloat(s.tax_rate) * 100) : '10';
+
+    if (s.items && s.items.length > 0) {
+      document.getElementById('tableBody').innerHTML = '';
+      rowCount = 0;
+      s.items.forEach(item => addRow(item));
+      document.getElementById('sections').classList.add('visible');
+      calcTotals();
+    }
+    toggleHistory();
+    showAlert(`「${entry.property_name}」を読み込みました`, 'success');
+  } catch(e) {
+    showAlert('読み込みエラー: ' + e.message, 'error');
+  }
 }
 
-function renderHistory() {
+async function deleteCase(id) {
+  if (!confirm('この案件を削除しますか？')) return;
+  try {
+    const res = await fetch(`/api/cases/${id}`, { method: 'DELETE' });
+    if (!res.ok) { const d = await res.json(); throw new Error(d.error || '削除エラー'); }
+    if (currentCaseId === id) currentCaseId = null;
+    renderHistory();
+  } catch(e) {
+    showAlert('削除エラー: ' + e.message, 'error');
+  }
+}
+
+async function renderHistory() {
   const list = document.getElementById('historyList');
-  const history = getHistory();
-  if (history.length === 0) {
-    list.innerHTML = '<p style="color:#888; text-align:center; margin-top:40px;">保存された案件はありません</p>';
-    return;
-  }
-  list.innerHTML = history.map(h => `
-    <div style="border:1px solid #dde; border-radius:6px; padding:10px 12px; margin-bottom:8px; cursor:pointer; background:#f8faff;" onclick="loadCase(${h.id})">
-      <div style="font-weight:bold; font-size:13px; color:#1F3864;">${h.property_name}</div>
-      <div style="font-size:11px; color:#666; margin-top:2px;">${h.tenant_name ? h.tenant_name + '　様　' : ''}${h.saved_at}</div>
-      <div style="text-align:right; margin-top:4px;">
-        <button onclick="event.stopPropagation(); deleteCase(${h.id})" style="background:#e53935; color:#fff; border:none; border-radius:4px; padding:2px 8px; font-size:11px; cursor:pointer;">削除</button>
+  list.innerHTML = '<div style="color:#aaa; text-align:center; padding:20px; font-size:12px;">読み込み中...</div>';
+  try {
+    const res = await fetch('/api/cases');
+    const history = await res.json();
+    if (!Array.isArray(history) || history.length === 0) {
+      list.innerHTML = '<p style="color:#888; text-align:center; margin-top:40px;">保存された案件はありません</p>';
+      return;
+    }
+    const statusLabel = s => s === 'completed' ? '<span style="background:#2e7d32;color:#fff;padding:1px 6px;border-radius:3px;font-size:10px;">完了</span>' : '<span style="background:#1565c0;color:#fff;padding:1px 6px;border-radius:3px;font-size:10px;">進行中</span>';
+    list.innerHTML = history.map(h => `
+      <div style="border:1px solid #dde; border-radius:6px; padding:10px 12px; margin-bottom:8px; cursor:pointer; background:#f8faff;" onclick="loadCase(${h.id})">
+        <div style="display:flex; align-items:center; gap:6px;">
+          ${statusLabel(h.status)}
+          <span style="font-weight:bold; font-size:13px; color:#1F3864;">${escHtml(h.property_name || '（物件名なし）')}</span>
+        </div>
+        <div style="font-size:11px; color:#666; margin-top:2px;">${h.tenant_name ? escHtml(h.tenant_name) + '　様　' : ''}${h.updated_at ? h.updated_at.substring(0,16) : ''}</div>
+        <div style="text-align:right; margin-top:4px; display:flex; gap:4px; justify-content:flex-end;">
+          <button onclick="event.stopPropagation(); toggleCaseStatus(${h.id}, '${h.status}')" style="background:#f57c00; color:#fff; border:none; border-radius:4px; padding:2px 8px; font-size:11px; cursor:pointer;">${h.status === 'completed' ? '進行中に戻す' : '完了にする'}</button>
+          <button onclick="event.stopPropagation(); deleteCase(${h.id})" style="background:#e53935; color:#fff; border:none; border-radius:4px; padding:2px 8px; font-size:11px; cursor:pointer;">削除</button>
+        </div>
       </div>
-    </div>
-  `).join('');
+    `).join('');
+  } catch(e) {
+    list.innerHTML = '<div style="color:red; padding:12px; font-size:12px;">読み込みエラー: ' + e.message + '</div>';
+  }
+}
+
+async function toggleCaseStatus(id, currentStatus) {
+  const newStatus = currentStatus === 'completed' ? 'active' : 'completed';
+  try {
+    // 既存データを取得して更新
+    const getRes = await fetch(`/api/cases/${id}`);
+    const entry = await getRes.json();
+    const updatedData = Object.assign({}, entry.data || {}, { status: newStatus });
+    const res = await fetch(`/api/cases/${id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(updatedData),
+    });
+    if (!res.ok) { const d = await res.json(); throw new Error(d.error || '更新エラー'); }
+    renderHistory();
+  } catch(e) {
+    showAlert('ステータス更新エラー: ' + e.message, 'error');
+  }
 }
 
 function toggleHistory() {
@@ -907,7 +1252,7 @@ function toggleHistory() {
   if (!isOpen) renderHistory();
 }
 
-// ========== LocalStorage 自動保存・復元 ==========
+// ── LocalStorage 自動保存・復元 ──────────────────────────────────────────
 const SAVE_KEY = 'ict_seisan_data';
 
 function buildState() {
@@ -915,33 +1260,48 @@ function buildState() {
   document.querySelectorAll('#tableBody tr').forEach(tr => {
     const inputs = tr.querySelectorAll('input');
     const selects = tr.querySelectorAll('select');
+    const burden = selects[1]?.value || '借';
+    const tRatio = parseFloat(tr.querySelector('.tenant-ratio-input')?.value || 0) || 0;
+    const lRatio = parseFloat(tr.querySelector('.landlord-ratio-input')?.value || 0) || 0;
     items.push({
-      category: selects[0]?.value || '',
-      description: inputs[0]?.value || '',
-      quantity: inputs[1]?.value || 0,
-      unit: inputs[2]?.value || '',
-      unit_price: inputs[3]?.value || 0,
-      burden: selects[1]?.value || '借',
+      category:       selects[0]?.value || '',
+      description:    inputs[0]?.value || '',
+      quantity:       inputs[1]?.value || 0,
+      unit:           inputs[2]?.value || '',
+      unit_price:     inputs[3]?.value || 0,
+      burden:         burden === 'カスタム' ? '両' : burden,
+      tenant_ratio:   tRatio,
+      landlord_ratio: lRatio,
     });
   });
+
+  const depositVal = parseFloat(document.getElementById('deposit').value || 0) || 0;
+  const monthlyRent = parseFloat(document.getElementById('monthlyRent').value || 0) || 0;
+  const amortMonths = parseFloat(document.getElementById('amortizationMonths').value || 0) || 0;
+  const amortAmount = Math.floor(monthlyRent * amortMonths);
+  const taxRateRaw = (parseFloat(document.getElementById('taxRate').value) || 10) / 100;
+
   return {
-    tenantName: document.getElementById('tenantName').value,
-    landlordName: document.getElementById('landlordName').value,
-    propertyName: document.getElementById('propertyName').value,
-    propertyAddress: document.getElementById('propertyAddress').value,
-    estimateNumber: document.getElementById('estimateNumber').value,
-    estimateDate: document.getElementById('estimateDate').value,
-    companyName: document.getElementById('companyName').value,
-    staffName: document.getElementById('staffName').value,
-    deposit: document.getElementById('deposit').value,
-    monthlyRent: document.getElementById('monthlyRent').value,
-    amortizationMonths: document.getElementById('amortizationMonths').value,
-    depositHolder: document.getElementById('depositHolder').value,
-    landlordRate: document.getElementById('landlordRate').value,
-    tenantRate: document.getElementById('tenantRate').value,
-    taxRate: document.getElementById('taxRate').value,
+    tenant_name:         document.getElementById('tenantName').value,
+    landlord_name:       document.getElementById('landlordName').value,
+    property_name:       document.getElementById('propertyName').value,
+    property_address:    document.getElementById('propertyAddress').value,
+    estimate_number:     document.getElementById('estimateNumber').value,
+    estimate_date:       document.getElementById('estimateDate').value,
+    company_name:        document.getElementById('companyName').value,
+    staff_name:          document.getElementById('staffName').value,
+    deposit:             depositVal,
+    monthly_rent:        monthlyRent,
+    amortization_months: amortMonths,
+    amortization_amount: amortAmount,
+    effective_deposit:   Math.max(0, depositVal - amortAmount),
+    deposit_holder:      document.getElementById('depositHolder').value,
+    landlord_rate:       parseFloat(document.getElementById('landlordRate').value) || 1.15,
+    tenant_rate:         parseFloat(document.getElementById('tenantRate').value) || 1.20,
+    tax_rate:            taxRateRaw,
     items,
     visible: document.getElementById('sections').classList.contains('visible'),
+    status: 'active',
   };
 }
 
@@ -954,22 +1314,27 @@ function loadFromLocal() {
   if (!raw) return;
   try {
     const s = JSON.parse(raw);
-    document.getElementById('tenantName').value = s.tenantName || '';
-    document.getElementById('landlordName').value = s.landlordName || '';
-    document.getElementById('propertyName').value = s.propertyName || '';
-    document.getElementById('propertyAddress').value = s.propertyAddress || '';
-    document.getElementById('estimateNumber').value = s.estimateNumber || '';
-    document.getElementById('estimateDate').value = s.estimateDate || '';
-    document.getElementById('companyName').value = s.companyName || '';
-    document.getElementById('staffName').value = s.staffName || '';
-    document.getElementById('deposit').value = s.deposit || '';
-    document.getElementById('monthlyRent').value = s.monthlyRent || '';
-    document.getElementById('amortizationMonths').value = s.amortizationMonths || '';
-    if (s.depositHolder) document.getElementById('depositHolder').value = s.depositHolder;
+    document.getElementById('tenantName').value     = s.tenant_name || s.tenantName || '';
+    document.getElementById('landlordName').value   = s.landlord_name || s.landlordName || '';
+    document.getElementById('propertyName').value   = s.property_name || s.propertyName || '';
+    document.getElementById('propertyAddress').value = s.property_address || s.propertyAddress || '';
+    document.getElementById('estimateNumber').value = s.estimate_number || s.estimateNumber || '';
+    document.getElementById('estimateDate').value   = s.estimate_date || s.estimateDate || '';
+    document.getElementById('companyName').value    = s.company_name || s.companyName || '';
+    document.getElementById('staffName').value      = s.staff_name || s.staffName || '';
+    document.getElementById('deposit').value        = s.deposit || '';
+    document.getElementById('monthlyRent').value    = s.monthly_rent || s.monthlyRent || '';
+    document.getElementById('amortizationMonths').value = s.amortization_months || s.amortizationMonths || '';
+    if (s.deposit_holder || s.depositHolder) document.getElementById('depositHolder').value = s.deposit_holder || s.depositHolder;
     calcDeposit();
-    document.getElementById('landlordRate').value = s.landlordRate || '1.15';
-    document.getElementById('tenantRate').value = s.tenantRate || '1.20';
-    document.getElementById('taxRate').value = s.taxRate || '10';
+    document.getElementById('landlordRate').value = s.landlord_rate || s.landlordRate || '1.15';
+    document.getElementById('tenantRate').value   = s.tenant_rate || s.tenantRate || '1.20';
+    // tax_rate はサーバー側では0.10などの小数、localStorageでは10%の数値（どちらにも対応）
+    let taxRateDisplay = s.tax_rate;
+    if (taxRateDisplay !== undefined) {
+      if (parseFloat(taxRateDisplay) < 1) taxRateDisplay = Math.round(parseFloat(taxRateDisplay) * 100);
+    }
+    document.getElementById('taxRate').value = taxRateDisplay || s.taxRate || '10';
 
     if (s.items && s.items.length > 0) {
       document.getElementById('tableBody').innerHTML = '';
@@ -984,60 +1349,22 @@ function loadFromLocal() {
 function clearLocal() {
   if (confirm('保存データをリセットしますか？')) {
     localStorage.removeItem(SAVE_KEY);
+    currentCaseId = null;
     location.reload();
   }
 }
 
-// 入力変更時に自動保存
 document.addEventListener('input', saveToLocal);
 document.addEventListener('change', saveToLocal);
 
-// ページ読み込み時に復元
 window.addEventListener('load', loadFromLocal);
 
+// ── Excel出力 ─────────────────────────────────────────────────────────────
 async function exportExcel() {
-  const items = [];
-  document.querySelectorAll('#tableBody tr').forEach(tr => {
-    const inputs = tr.querySelectorAll('input');
-    const selects = tr.querySelectorAll('select');
-    items.push({
-      category: selects[0]?.value || '',
-      description: inputs[0]?.value || '',
-      quantity: parseFloat(inputs[1]?.value || 0),
-      unit: inputs[2]?.value || '',
-      unit_price: parseFloat(inputs[3]?.value || 0),
-      burden: selects[1]?.value || '借',
-    });
-  });
+  const payload = buildState();
+  payload.proposals = getProposals();
 
-  const proposals = getProposals();
-  const depositVal = parseFloat(document.getElementById('deposit').value || 0) || 0;
-  const monthlyRent = parseFloat(document.getElementById('monthlyRent').value || 0) || 0;
-  const amortMonths = parseFloat(document.getElementById('amortizationMonths').value || 0) || 0;
-  const amortAmount = Math.floor(monthlyRent * amortMonths);
-  const payload = {
-    tenant_name: document.getElementById('tenantName').value,
-    landlord_name: document.getElementById('landlordName').value,
-    property_name: document.getElementById('propertyName').value,
-    property_address: document.getElementById('propertyAddress').value,
-    estimate_number: document.getElementById('estimateNumber').value,
-    estimate_date: document.getElementById('estimateDate').value,
-    company_name: document.getElementById('companyName').value,
-    staff_name: document.getElementById('staffName').value,
-    deposit: depositVal,
-    monthly_rent: monthlyRent,
-    amortization_months: amortMonths,
-    amortization_amount: amortAmount,
-    effective_deposit: Math.max(0, depositVal - amortAmount),
-    deposit_holder: document.getElementById('depositHolder').value,
-    landlord_rate: parseFloat(document.getElementById('landlordRate').value),
-    tenant_rate: parseFloat(document.getElementById('tenantRate').value),
-    tax_rate: (parseFloat(document.getElementById('taxRate').value) || 10) / 100,
-    items,
-    proposals,
-  };
-
-  // 写真があればmultipart、なければJSON
+  const proposals = payload.proposals;
   const hasPhotos = proposals.some(p => {
     const photoEl = document.getElementById(`p_photo_${p.index}`);
     return photoEl && photoEl.files && photoEl.files[0];
@@ -1081,6 +1408,70 @@ async function exportExcel() {
     showAlert('Excelをダウンロードしました', 'success');
   } catch (e) {
     showAlert('ダウンロードエラー：' + e.message, 'error');
+  }
+}
+
+// ── PDF印刷 ────────────────────────────────────────────────────────────────
+async function printInvoice(sheetType) {
+  if (!currentCaseId) {
+    // 未保存の場合は先に保存
+    await saveCase();
+    if (!currentCaseId) {
+      showAlert('先に案件を保存してください', 'error');
+      return;
+    }
+  }
+  window.open(`/print/${currentCaseId}/${sheetType}`, '_blank');
+}
+
+// ── メール文面生成 ─────────────────────────────────────────────────────────
+async function generateMsg(type) {
+  const rates = getRates();
+  let tenantTotal = 0, landlordTotal = 0;
+  document.querySelectorAll('#tableBody tr').forEach(tr => {
+    tenantTotal   += parseFmt(tr.querySelector('.tenant-amount').textContent);
+    landlordTotal += parseFmt(tr.querySelector('.landlord-amount').textContent);
+  });
+  const tenantTax   = Math.floor(tenantTotal   * (1 + rates.tax));
+  const landlordTax = Math.floor(landlordTotal * (1 + rates.tax));
+  const depositVal  = parseFloat(document.getElementById('deposit').value || 0) || 0;
+  const effective   = getEffectiveDeposit();
+  const depBalance  = tenantTax - effective;
+  const isRefund    = depositVal > 0 && depBalance <= 0;
+  const netAmount   = depositVal > 0 ? Math.abs(depBalance) : tenantTax;
+
+  const payload = {
+    type,
+    property_name:     document.getElementById('propertyName').value,
+    tenant_name:       document.getElementById('tenantName').value,
+    landlord_name:     document.getElementById('landlordName').value,
+    tenant_total_tax:  tenantTax,
+    landlord_total_tax: landlordTax,
+    deposit:           depositVal,
+    effective_deposit: effective,
+    is_refund:         isRefund,
+    net_amount:        netAmount,
+  };
+
+  const btn = document.querySelector(`button[onclick="generateMsg('${type}')"]`);
+  const orig = btn ? btn.textContent : '';
+  if (btn) { btn.disabled = true; btn.textContent = '生成中...'; }
+
+  try {
+    const res = await fetch('/api/generate-message', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || '生成エラー');
+    document.getElementById('msgText').value = data.message;
+    document.getElementById('msgResult').style.display = 'block';
+    showAlert('文面を生成しました', 'success');
+  } catch(e) {
+    showAlert('文面生成エラー: ' + e.message, 'error');
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = orig; }
   }
 }
 </script>

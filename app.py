@@ -2,6 +2,7 @@ import os
 import base64
 import json
 import re
+import sqlite3
 import tempfile
 from datetime import datetime
 from io import BytesIO
@@ -21,6 +22,344 @@ app = Flask(__name__)
 app.config["MAX_CONTENT_LENGTH"] = 50 * 1024 * 1024  # 50MB
 
 client = anthropic.Anthropic(api_key=os.environ.get("ANTHROPIC_API_KEY"))
+
+# ─── SQLite ───────────────────────────────────────────────────────────────────
+
+DB_PATH = os.path.join(os.path.dirname(__file__), "seisan.db")
+
+
+def get_db():
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    return conn
+
+
+def init_db():
+    with get_db() as conn:
+        conn.executescript("""
+            CREATE TABLE IF NOT EXISTS cases (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                property_name TEXT DEFAULT '',
+                tenant_name TEXT DEFAULT '',
+                landlord_name TEXT DEFAULT '',
+                status TEXT DEFAULT 'active',
+                data_json TEXT DEFAULT '{}'
+            );
+            CREATE TABLE IF NOT EXISTS staff_master (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL UNIQUE
+            );
+            CREATE TABLE IF NOT EXISTS landlord_master (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL,
+                address TEXT DEFAULT '',
+                phone TEXT DEFAULT ''
+            );
+            CREATE TABLE IF NOT EXISTS tenant_master (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL,
+                phone TEXT DEFAULT ''
+            );
+        """)
+
+
+init_db()
+
+# ─── マスターデータ ─────────────────────────────────────────────────────────────
+
+TABLE_MAP = {
+    "staff":     ("staff_master",    ["name"]),
+    "landlords": ("landlord_master", ["name", "address", "phone"]),
+    "tenants":   ("tenant_master",   ["name", "phone"]),
+}
+
+
+@app.route("/api/masters/<string:mtype>", methods=["GET"])
+def get_masters(mtype):
+    try:
+        if mtype not in TABLE_MAP:
+            return jsonify({"error": "Invalid type"}), 400
+        table, _ = TABLE_MAP[mtype]
+        with get_db() as conn:
+            rows = conn.execute(f"SELECT * FROM {table} ORDER BY id").fetchall()
+        return jsonify([dict(r) for r in rows])
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/masters/<string:mtype>", methods=["POST"])
+def add_master(mtype):
+    try:
+        if mtype not in TABLE_MAP:
+            return jsonify({"error": "Invalid type"}), 400
+        table, fields = TABLE_MAP[mtype]
+        body = request.get_json() or {}
+        values = [body.get(f, "") for f in fields]
+        placeholders = ",".join(["?"] * len(fields))
+        cols = ",".join(fields)
+        with get_db() as conn:
+            cur = conn.execute(
+                f"INSERT INTO {table} ({cols}) VALUES ({placeholders})", values
+            )
+            new_id = cur.lastrowid
+        return jsonify({"id": new_id, "message": "追加しました"})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/masters/<string:mtype>/<int:mid>", methods=["DELETE"])
+def delete_master(mtype, mid):
+    try:
+        if mtype not in TABLE_MAP:
+            return jsonify({"error": "Invalid type"}), 400
+        table, _ = TABLE_MAP[mtype]
+        with get_db() as conn:
+            conn.execute(f"DELETE FROM {table} WHERE id=?", (mid,))
+        return jsonify({"message": "削除しました"})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+# ─── 案件CRUD ────────────────────────────────────────────────────────────────
+
+@app.route("/api/cases", methods=["GET"])
+def get_cases():
+    try:
+        with get_db() as conn:
+            rows = conn.execute(
+                "SELECT id, property_name, tenant_name, landlord_name, status, created_at, updated_at "
+                "FROM cases ORDER BY updated_at DESC"
+            ).fetchall()
+        return jsonify([dict(r) for r in rows])
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/cases", methods=["POST"])
+def create_case():
+    try:
+        body = request.get_json() or {}
+        property_name = body.get("property_name", "")
+        tenant_name   = body.get("tenant_name", "")
+        landlord_name = body.get("landlord_name", "")
+        status        = body.get("status", "active")
+        data_json     = json.dumps(body, ensure_ascii=False)
+        with get_db() as conn:
+            cur = conn.execute(
+                "INSERT INTO cases (property_name, tenant_name, landlord_name, status, data_json) "
+                "VALUES (?,?,?,?,?)",
+                (property_name, tenant_name, landlord_name, status, data_json)
+            )
+            new_id = cur.lastrowid
+        return jsonify({"id": new_id, "message": "保存しました"})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/cases/<int:cid>", methods=["GET"])
+def get_case(cid):
+    try:
+        with get_db() as conn:
+            row = conn.execute("SELECT * FROM cases WHERE id=?", (cid,)).fetchone()
+        if not row:
+            return jsonify({"error": "案件が見つかりません"}), 404
+        d = dict(row)
+        try:
+            d["data"] = json.loads(d.get("data_json") or "{}")
+        except Exception:
+            d["data"] = {}
+        return jsonify(d)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/cases/<int:cid>", methods=["PUT"])
+def update_case(cid):
+    try:
+        body = request.get_json() or {}
+        property_name = body.get("property_name", "")
+        tenant_name   = body.get("tenant_name", "")
+        landlord_name = body.get("landlord_name", "")
+        status        = body.get("status", "active")
+        data_json     = json.dumps(body, ensure_ascii=False)
+        now           = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        with get_db() as conn:
+            conn.execute(
+                "UPDATE cases SET property_name=?, tenant_name=?, landlord_name=?, "
+                "status=?, data_json=?, updated_at=? WHERE id=?",
+                (property_name, tenant_name, landlord_name, status, data_json, now, cid)
+            )
+        return jsonify({"message": "更新しました"})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/cases/<int:cid>", methods=["DELETE"])
+def delete_case(cid):
+    try:
+        with get_db() as conn:
+            conn.execute("DELETE FROM cases WHERE id=?", (cid,))
+        return jsonify({"message": "削除しました"})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+# ─── メール文面生成 ───────────────────────────────────────────────────────────
+
+@app.route("/api/generate-message", methods=["POST"])
+def generate_message():
+    try:
+        body = request.get_json() or {}
+        msg_type      = body.get("type", "tenant")
+        property_name = body.get("property_name", "")
+        tenant_name   = body.get("tenant_name", "")
+        landlord_name = body.get("landlord_name", "")
+        tenant_total_tax  = int(body.get("tenant_total_tax", 0) or 0)
+        landlord_total_tax = int(body.get("landlord_total_tax", 0) or 0)
+        deposit       = int(body.get("deposit", 0) or 0)
+        effective_deposit = int(body.get("effective_deposit", deposit) or deposit)
+        is_refund     = bool(body.get("is_refund", False))
+        net_amount    = int(body.get("net_amount", 0) or 0)
+
+        if msg_type == "tenant":
+            prompt = f"""以下の情報をもとに、借主向けの敷金精算通知文を300字以内で作成してください。
+LINE WORKSで送れる、丁寧かつ簡潔な文章にしてください。
+
+【物件名】{property_name}
+【借主名】{tenant_name} 様
+【借主負担合計（税込）】¥{tenant_total_tax:,}
+【敷金】¥{deposit:,}（有効敷金：¥{effective_deposit:,}）
+{"【返金予定額】¥" + f"{net_amount:,}" if is_refund else "【追加ご請求額】¥" + f"{net_amount:,}"}
+
+件名から書き始め、挨拶→精算結果→{"返金" if is_refund else "振込のお願い"}→お問い合わせ先（恵比寿不動産 03-6421-0544）の順で書いてください。"""
+
+        elif msg_type == "landlord":
+            prompt = f"""以下の情報をもとに、貸主向けの原状回復精算報告文を300字以内で作成してください。
+丁寧かつ要点をまとめた報告文にしてください。
+
+【物件名】{property_name}
+【貸主名】{landlord_name} 様
+【貸主負担合計（税込）】¥{landlord_total_tax:,}
+【借主負担合計（税込）】¥{tenant_total_tax:,}
+{"【借主への返金額】¥" + f"{net_amount:,}" if is_refund else "【借主への追加請求額】¥" + f"{net_amount:,}"}
+
+件名から書き始め、挨拶→精算概要→貸主ご負担額→{"借主への返金処理" if is_refund else "借主への請求状況"}→今後の対応→お問い合わせ先（恵比寿不動産 03-6421-0544）の順で書いてください。"""
+
+        else:  # internal
+            prompt = f"""以下の情報をもとに、社内向けのLINE WORKS共有文を作成してください。
+箇条書き形式で、必要情報が一目でわかるように簡潔にまとめてください。
+
+【物件名】{property_name}
+【借主名】{tenant_name}
+【貸主名】{landlord_name}
+【貸主負担（税込）】¥{landlord_total_tax:,}
+【借主負担（税込）】¥{tenant_total_tax:,}
+【敷金】¥{deposit:,}（有効：¥{effective_deposit:,}）
+{"【借主への返金額】¥" + f"{net_amount:,}" if is_refund else "【借主への追加請求額】¥" + f"{net_amount:,}"}
+
+「■ 原状回復精算 共有」というタイトルで始め、各情報を箇条書きで整理し、対応ステータスや次のアクションも含めてください。"""
+
+        message = client.messages.create(
+            model="claude-sonnet-4-5",
+            max_tokens=1024,
+            messages=[{"role": "user", "content": prompt}],
+        )
+        text = message.content[0].text.strip()
+        return jsonify({"message": text})
+    except anthropic.APIError as e:
+        return jsonify({"error": f"Claude APIエラー: {str(e)}"}), 500
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+# ─── 印刷用HTMLビュー ─────────────────────────────────────────────────────────
+
+@app.route("/print/<int:case_id>/<string:sheet_type>")
+def print_invoice(case_id, sheet_type):
+    try:
+        if sheet_type not in ("tenant", "landlord"):
+            return "Invalid sheet_type", 400
+        with get_db() as conn:
+            row = conn.execute("SELECT * FROM cases WHERE id=?", (case_id,)).fetchone()
+        if not row:
+            return "案件が見つかりません", 404
+        case_data = dict(row)
+        try:
+            data = json.loads(case_data.get("data_json") or "{}")
+        except Exception:
+            data = {}
+
+        items        = data.get("items", [])
+        landlord_rate = float(data.get("landlord_rate", 1.15) or 1.15)
+        tenant_rate   = float(data.get("tenant_rate", 1.20) or 1.20)
+        tax_rate      = float(data.get("tax_rate", 0.10) or 0.10)
+        deposit_val   = float(data.get("deposit", 0) or 0)
+        effective_dep = float(data.get("effective_deposit", deposit_val) or deposit_val)
+
+        rows_out = []
+        tenant_ex = 0
+        landlord_ex = 0
+        for item in items:
+            qty    = float(item.get("quantity", 0) or 0)
+            price  = float(item.get("unit_price", 0) or 0)
+            vendor = int(qty * price)
+            burden = item.get("burden", "借")
+            t_ratio = item.get("tenant_ratio")
+            l_ratio = item.get("landlord_ratio")
+            if t_ratio is not None and l_ratio is not None:
+                t_amt = int(vendor * (float(t_ratio) / 100) * tenant_rate)
+                l_amt = int(vendor * (float(l_ratio) / 100) * landlord_rate)
+            elif burden == "貸":
+                t_amt, l_amt = 0, int(vendor * landlord_rate)
+            elif burden == "借":
+                t_amt, l_amt = int(vendor * tenant_rate), 0
+            elif burden == "両":
+                t_amt = int((vendor / 2) * tenant_rate)
+                l_amt = int((vendor / 2) * landlord_rate)
+            else:
+                t_amt, l_amt = 0, 0
+            tenant_ex   += t_amt
+            landlord_ex += l_amt
+            rows_out.append({
+                "category":    item.get("category", ""),
+                "description": item.get("description", ""),
+                "quantity":    qty,
+                "unit":        item.get("unit", ""),
+                "unit_price":  price,
+                "vendor":      vendor,
+                "t_amt":       t_amt,
+                "l_amt":       l_amt,
+                "burden":      burden,
+            })
+
+        tenant_tax   = int(tenant_ex   * (1 + tax_rate))
+        landlord_tax = int(landlord_ex * (1 + tax_rate))
+        dep_balance  = int(tenant_tax) - int(effective_dep)
+        is_refund    = dep_balance <= 0
+        net_amount   = abs(dep_balance)
+
+        return render_template(
+            "print_invoice.html",
+            sheet_type=sheet_type,
+            data=data,
+            rows=rows_out,
+            tenant_ex=tenant_ex,
+            landlord_ex=landlord_ex,
+            tenant_tax=tenant_tax,
+            landlord_tax=landlord_tax,
+            deposit_val=deposit_val,
+            effective_dep=effective_dep,
+            dep_balance=dep_balance,
+            is_refund=is_refund,
+            net_amount=net_amount,
+            tax_rate=tax_rate,
+            now=datetime.now().strftime("%Y年%m月%d日"),
+        )
+    except Exception as e:
+        return f"エラー: {str(e)}", 500
+
 
 WORK_CATEGORIES = [
     "クロス張替え（全面）",
@@ -274,10 +613,20 @@ def analyze():
 
         result = json.loads(response_text)
 
-        # 負担区分のデフォルト値を付与
+        # 負担区分のデフォルト値を付与（ratioも設定）
         for item in result.get("items", []):
             category = item.get("category", "その他（自由入力）")
-            item["burden"] = DEFAULT_BURDEN.get(category, "借")
+            burden = DEFAULT_BURDEN.get(category, "借")
+            item["burden"] = burden
+            if burden == "借":
+                item["tenant_ratio"] = 100
+                item["landlord_ratio"] = 0
+            elif burden == "貸":
+                item["tenant_ratio"] = 0
+                item["landlord_ratio"] = 100
+            else:  # 両
+                item["tenant_ratio"] = 50
+                item["landlord_ratio"] = 50
 
         return jsonify(result)
 
@@ -326,8 +675,6 @@ def export():
             f.write(output.read())
         output.seek(0)
 
-        encoded_filename = filename.encode("utf-8").decode("latin-1", errors="replace")
-
         return send_file(
             output,
             mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -368,6 +715,41 @@ def fill_row_borders(ws, row, start_col, end_col, bg_color=None):
         c.border = make_border()
         if bg_color:
             c.fill = PatternFill(start_color=bg_color, end_color=bg_color, fill_type="solid")
+
+
+def _calc_row_amounts(item, landlord_rate, tenant_rate):
+    """itemのratio or burdenを元に貸主・借主金額を計算する"""
+    qty    = float(item.get("quantity", 0) or 0)
+    price  = float(item.get("unit_price", 0) or 0)
+    vendor = int(qty * price)
+    burden = item.get("burden", "借")
+    t_ratio = item.get("tenant_ratio")
+    l_ratio = item.get("landlord_ratio")
+
+    if t_ratio is not None and l_ratio is not None:
+        t_r = float(t_ratio)
+        l_r = float(l_ratio)
+        t_amt = int(vendor * (t_r / 100) * tenant_rate)
+        l_amt = int(vendor * (l_r / 100) * landlord_rate)
+        t_ratio_str = f"{int(t_r)}%"
+        l_ratio_str = f"{int(l_r)}%"
+    elif burden == "貸":
+        t_ratio_str, l_ratio_str = "0%", "100%"
+        t_amt = 0
+        l_amt = int(vendor * landlord_rate)
+    elif burden == "借":
+        t_ratio_str, l_ratio_str = "100%", "0%"
+        t_amt = int(vendor * tenant_rate)
+        l_amt = 0
+    elif burden == "両":
+        t_ratio_str, l_ratio_str = "50%", "50%"
+        t_amt = int((vendor / 2) * tenant_rate)
+        l_amt = int((vendor / 2) * landlord_rate)
+    else:
+        t_ratio_str, l_ratio_str = "", ""
+        t_amt, l_amt = 0, 0
+
+    return vendor, t_amt, l_amt, t_ratio_str, l_ratio_str
 
 
 def create_excel(data, photos=None):
@@ -427,12 +809,10 @@ def _build_estimate_sheet(ws, data, items, landlord_rate, tenant_rate, tax_rate,
 
     issue_date = datetime.now().strftime("%Y年%m月%d日")
 
-    # ── Row1: 発行日 ──────────────────────────────
     ws["A1"] = f"発行日：{issue_date}"
     ws["A1"].font = Font(name="Yu Gothic UI", size=9, color="555555")
     ws.row_dimensions[1].height = 14
 
-    # ── Row2: タイトル（中央）＋ 会社名（右） ────────────
     ws.merge_cells("C2:G2")
     c = ws["C2"]; c.value = "お見積書"
     c.font = Font(name="Yu Gothic UI", bold=True, size=20, color="1F3864")
@@ -443,7 +823,6 @@ def _build_estimate_sheet(ws, data, items, landlord_rate, tenant_rate, tax_rate,
     c.alignment = Alignment(horizontal="right", vertical="center")
     ws.row_dimensions[2].height = 34
 
-    # ── Row3: 借主名（左）＋ 会社住所（右） ──────────────
     ws.merge_cells("A3:E3")
     c = ws["A3"]; c.value = f"{tenant_name}　様" if tenant_name else "　様"
     c.font = Font(name="Yu Gothic UI", bold=True, size=14)
@@ -454,17 +833,11 @@ def _build_estimate_sheet(ws, data, items, landlord_rate, tenant_rate, tax_rate,
     c.alignment = Alignment(horizontal="right", vertical="center")
     ws.row_dimensions[3].height = 24
 
-    # ── Row4: お見積もり金額（貸主負担税込） ─────────────
+    # お見積もり金額プレビュー（ratio対応）
     landlord_ex_preview = 0
     for item in items:
-        qty = float(item.get("quantity", 0) or 0)
-        price = float(item.get("unit_price", 0) or 0)
-        vendor = int(qty * price)
-        burden = item.get("burden", "借")
-        if burden == "貸":
-            landlord_ex_preview += int(vendor * landlord_rate)
-        elif burden == "両":
-            landlord_ex_preview += int((vendor / 2) * landlord_rate)
+        _, _, l_amt, _, _ = _calc_row_amounts(item, landlord_rate, tenant_rate)
+        landlord_ex_preview += l_amt
     landlord_tax_preview = int(landlord_ex_preview * (1 + tax_rate))
 
     ws.merge_cells("A4:B4")
@@ -482,7 +855,6 @@ def _build_estimate_sheet(ws, data, items, landlord_rate, tenant_rate, tax_rate,
     c.border = make_border()
     ws.row_dimensions[4].height = 26
 
-    # ── Row5-7: 工事情報 ──────────────────────────
     prop_rows = [("工事件名", "原状回復工事"), ("物件名", property_name), ("物件住所", property_address)]
     r = 5
     for label, value in prop_rows:
@@ -502,8 +874,6 @@ def _build_estimate_sheet(ws, data, items, landlord_rate, tenant_rate, tax_rate,
     r += 1  # 空行
     ws.row_dimensions[r - 1].height = 6
 
-    # ── テーブルヘッダー（2行） ───────────────────────
-    # Row1: 単一セルは2行スパン、借主/貸主は2列スパン
     row_h1 = r
     for col, val in [(1,"No."),(2,"名称"),(3,"施工箇所"),(4,"数量"),(5,"単位"),(6,"単価"),(7,"金額"),(12,"備考")]:
         ws.merge_cells(start_row=row_h1, start_column=col, end_row=row_h1+1, end_column=col)
@@ -517,7 +887,6 @@ def _build_estimate_sheet(ws, data, items, landlord_rate, tenant_rate, tax_rate,
     apply_header_style(c, "1F3864")
     ws.row_dimensions[row_h1].height = 18
 
-    # Row2: 割合/金額
     row_h2 = row_h1 + 1
     for col, val, bg in [(8,"割合","8B2500"),(9,"金額","8B2500"),(10,"割合","1F3864"),(11,"金額","1F3864")]:
         c = ws.cell(row=row_h2, column=col, value=val)
@@ -525,7 +894,6 @@ def _build_estimate_sheet(ws, data, items, landlord_rate, tenant_rate, tax_rate,
     ws.row_dimensions[row_h2].height = 16
     r = row_h2 + 1
 
-    # ── データ行（20行固定） ──────────────────────────
     vendor_total = 0
     tenant_total_ex = 0
     landlord_total_ex = 0
@@ -533,29 +901,24 @@ def _build_estimate_sheet(ws, data, items, landlord_rate, tenant_rate, tax_rate,
     for i in range(1, 21):
         if i <= len(items):
             item = items[i - 1]
-            qty = float(item.get("quantity", 0) or 0)
-            price = float(item.get("unit_price", 0) or 0)
-            vendor = int(qty * price)
             burden = item.get("burden", "借")
-            if burden == "貸":
-                t_ratio, l_ratio = "0%", "100%"
-                t_amt = 0
-                l_amt = int(vendor * landlord_rate)
-            elif burden == "借":
-                t_ratio, l_ratio = "100%", "0%"
-                t_amt = int(vendor * tenant_rate)
-                l_amt = 0
-            elif burden == "両":
-                t_ratio, l_ratio = "50%", "50%"
-                t_amt = int((vendor / 2) * tenant_rate)
-                l_amt = int((vendor / 2) * landlord_rate)
-            else:
-                t_ratio, l_ratio = "", ""
-                t_amt, l_amt = 0, 0
+            vendor, t_amt, l_amt, t_ratio, l_ratio = _calc_row_amounts(item, landlord_rate, tenant_rate)
             vendor_total += vendor
             tenant_total_ex += t_amt
             landlord_total_ex += l_amt
             bg = "FCE4D6" if burden == "借" else ("D9E1F2" if burden == "貸" else "E2EFDA")
+            # カスタムの場合は背景色を変える
+            if item.get("tenant_ratio") is not None:
+                tr_val = float(item.get("tenant_ratio", 0))
+                lr_val = float(item.get("landlord_ratio", 0))
+                if tr_val == 100:
+                    bg = "FCE4D6"
+                elif lr_val == 100:
+                    bg = "D9E1F2"
+                else:
+                    bg = "E2EFDA"
+            qty = float(item.get("quantity", 0) or 0)
+            price = float(item.get("unit_price", 0) or 0)
             row_vals = [i, item.get("category",""), item.get("description",""),
                         qty, item.get("unit",""), price, vendor,
                         t_ratio, t_amt, l_ratio, l_amt, ""]
@@ -578,7 +941,6 @@ def _build_estimate_sheet(ws, data, items, landlord_rate, tenant_rate, tax_rate,
         ws.row_dimensions[r].height = 18
         r += 1
 
-    # ── 小計・消費税・合計 ────────────────────────────
     tax_pct = int(tax_rate * 100)
     totals = [
         ("小計", vendor_total, tenant_total_ex, landlord_total_ex),
@@ -600,7 +962,6 @@ def _build_estimate_sheet(ws, data, items, landlord_rate, tenant_rate, tax_rate,
         ws.row_dimensions[r].height = 18
         r += 1
 
-    # ── 弊社利益（内部確認用） ──────────────────────────
     profit = (landlord_total_ex + tenant_total_ex) - vendor_total
     profit_rate = (profit / vendor_total * 100) if vendor_total > 0 else 0
     ws.merge_cells(start_row=r, start_column=1, end_row=r, end_column=12)
@@ -609,7 +970,6 @@ def _build_estimate_sheet(ws, data, items, landlord_rate, tenant_rate, tax_rate,
     ws.row_dimensions[r].height = 18
     r += 2
 
-    # ── 備考 ──────────────────────────────────────
     ws.merge_cells(start_row=r, start_column=1, end_row=r, end_column=12)
     c = ws.cell(row=r, column=1, value="【備考】")
     c.font = Font(name="Yu Gothic UI", bold=True, size=10)
@@ -637,50 +997,37 @@ def _build_invoice_sheet(ws, data, items, landlord_rate, tenant_rate, tax_rate, 
     staff_name   = data.get("staff_name", "")
     addressee    = tenant_name if mode == "tenant" else landlord_name
 
-    # 列幅 (12列: A-L)
     col_w = {"A":5,"B":26,"C":20,"D":7,"E":6,"F":11,"G":13,"H":7,"I":13,"J":7,"K":13,"L":28}
     for col, w in col_w.items():
         ws.column_dimensions[col].width = w
 
     issue_date = datetime.now().strftime("%Y年%m月%d日")
 
-    # ── Row1: 発行日 ──────────────────────────────
     ws["A1"] = f"発行日：{issue_date}"
     ws["A1"].font = Font(name="Yu Gothic UI", size=9, color="555555")
     ws.row_dimensions[1].height = 14
 
-    # ── Row2: タイトル（中央）────────────────────────
     ws.merge_cells("C2:G2")
     c = ws["C2"]; c.value = "ご請求書"
     c.font = Font(name="Yu Gothic UI", bold=True, size=20, color="1F3864")
     c.alignment = Alignment(horizontal="center", vertical="center")
     ws.row_dimensions[2].height = 34
 
-    # ── Row3: 宛名（左）──────────────────────────────
     ws.merge_cells("A3:E3")
     c = ws["A3"]; c.value = f"{addressee}　様" if addressee else "　　　　　　　　様"
     c.font = Font(name="Yu Gothic UI", bold=True, size=14)
     c.alignment = Alignment(horizontal="left", vertical="center")
     ws.row_dimensions[3].height = 26
 
-    # 請求金額を事前計算
+    # 請求金額を事前計算（ratio対応）
     tenant_ex = 0; landlord_ex = 0
     for item in items:
-        qty   = float(item.get("quantity", 0) or 0)
-        price = float(item.get("unit_price", 0) or 0)
-        vendor = int(qty * price)
-        burden = item.get("burden", "借")
-        if burden == "貸":
-            landlord_ex += int(vendor * landlord_rate)
-        elif burden == "借":
-            tenant_ex += int(vendor * tenant_rate)
-        elif burden == "両":
-            landlord_ex += int((vendor / 2) * landlord_rate)
-            tenant_ex   += int((vendor / 2) * tenant_rate)
+        _, t_amt, l_amt, _, _ = _calc_row_amounts(item, landlord_rate, tenant_rate)
+        tenant_ex   += t_amt
+        landlord_ex += l_amt
     req_ex  = tenant_ex if mode == "tenant" else landlord_ex
-    req_tax = int(req_ex * (1 + tax_rate))  # 工事費総額（税込）
+    req_tax = int(req_ex * (1 + tax_rate))
 
-    # 借主請求書：敷金精算後の実請求額を算出
     deposit_val    = float(data.get("deposit", 0) or 0)
     effective_dep  = float(data.get("effective_deposit", deposit_val) or deposit_val)
     amort_months   = float(data.get("amortization_months", 0) or 0)
@@ -689,10 +1036,9 @@ def _build_invoice_sheet(ws, data, items, landlord_rate, tenant_rate, tax_rate, 
     holder_label   = "当社（ライフアドバンス）" if holder == "company" else "貸主様"
 
     if mode == "tenant" and deposit_val > 0:
-        # 差額 = 工事費 - 有効敷金
         dep_balance = int(req_tax) - int(effective_dep)
-        is_refund   = dep_balance <= 0           # 敷金が余る → 返金
-        net_amount  = abs(dep_balance)           # 実請求額 or 返金額
+        is_refund   = dep_balance <= 0
+        net_amount  = abs(dep_balance)
         box_label   = "返金予定額（税込）" if is_refund else "ご請求金額（敷金精算後・税込）"
         box_color   = "E8F5E9" if is_refund else "FFEBEE"
         box_text_color = "1B5E20" if is_refund else "B71C1C"
@@ -704,7 +1050,6 @@ def _build_invoice_sheet(ws, data, items, landlord_rate, tenant_rate, tax_rate, 
         box_color     = "EEEEEE"
         box_text_color = "1F3864"
 
-    # ── Row4: ご請求金額ボックス（敷金精算後の実額）───────
     ws.merge_cells("A4:B4")
     c = ws["A4"]; c.value = box_label
     c.font = Font(name="Yu Gothic UI", size=9, bold=True)
@@ -717,7 +1062,6 @@ def _build_invoice_sheet(ws, data, items, landlord_rate, tenant_rate, tax_rate, 
     c.alignment = Alignment(horizontal="center", vertical="center"); c.border = make_border()
     ws.row_dimensions[4].height = 30
 
-    # ── 右側会社情報（Row2〜7, H〜L列）──────────────────
     co_rows = [
         (2, "株式会社 ライフアドバンス",         True,  12),
         (3, "東京都渋谷区東3-25-11",              False,  9),
@@ -733,7 +1077,6 @@ def _build_invoice_sheet(ws, data, items, landlord_rate, tenant_rate, tax_rate, 
                       color="1F3864" if bold else "444444")
         c.alignment = Alignment(horizontal="right", vertical="center")
 
-    # ── Row5〜7: 工事情報（左側）──────────────────────
     prop_rows = [
         ("工事件名", "原状回復工事"),
         ("物件名",   property_name),
@@ -751,10 +1094,8 @@ def _build_invoice_sheet(ws, data, items, landlord_rate, tenant_rate, tax_rate, 
         c.font = Font(name="Yu Gothic UI", size=9); c.border = make_border()
         ws.row_dimensions[rn].height = 16
 
-    # ── Row8: スペーサー ─────────────────────────────
     ws.row_dimensions[8].height = 6
 
-    # ── Rows9〜10: テーブルヘッダー（2行） ───────────────
     row_h1 = 9
     for col, val in [(1,"No."),(2,"名称"),(3,"施工箇所"),(4,"数量"),(5,"単位"),(6,"単価"),(7,"金額"),(12,"備考")]:
         ws.merge_cells(start_row=row_h1, start_column=col, end_row=row_h1+1, end_column=col)
@@ -770,30 +1111,29 @@ def _build_invoice_sheet(ws, data, items, landlord_rate, tenant_rate, tax_rate, 
         c = ws.cell(row=row_h2, column=col, value=val); apply_header_style(c, bg)
     ws.row_dimensions[row_h2].height = 16
 
-    # ── Rows11〜30: データ行（20行固定）──────────────────
     vendor_total = 0; tenant_total_ex = 0; landlord_total_ex = 0
 
     for i in range(1, 21):
-        r = 10 + i  # row 11〜30
+        r = 10 + i
         if i <= len(items):
             item   = items[i-1]
-            qty    = float(item.get("quantity", 0) or 0)
-            price  = float(item.get("unit_price", 0) or 0)
-            vendor = int(qty * price)
             burden = item.get("burden", "借")
-            if burden == "貸":
-                t_ratio, l_ratio = "0%", "100%"
-                t_amt = 0; l_amt = int(vendor * landlord_rate)
-            elif burden == "借":
-                t_ratio, l_ratio = "100%", "0%"
-                t_amt = int(vendor * tenant_rate); l_amt = 0
-            elif burden == "両":
-                t_ratio, l_ratio = "50%", "50%"
-                t_amt = int((vendor/2)*tenant_rate); l_amt = int((vendor/2)*landlord_rate)
-            else:
-                t_ratio, l_ratio = "0%", "0%"; t_amt = l_amt = 0
+            vendor, t_amt, l_amt, t_ratio, l_ratio = _calc_row_amounts(item, landlord_rate, tenant_rate)
             vendor_total += vendor; tenant_total_ex += t_amt; landlord_total_ex += l_amt
-            bg = "FCE4D6" if burden=="借" else ("D9E1F2" if burden=="貸" else "E2EFDA")
+            # 背景色
+            if item.get("tenant_ratio") is not None:
+                tr_val = float(item.get("tenant_ratio", 0))
+                lr_val = float(item.get("landlord_ratio", 0))
+                if tr_val == 100:
+                    bg = "FCE4D6"
+                elif lr_val == 100:
+                    bg = "D9E1F2"
+                else:
+                    bg = "E2EFDA"
+            else:
+                bg = "FCE4D6" if burden=="借" else ("D9E1F2" if burden=="貸" else "E2EFDA")
+            qty   = float(item.get("quantity", 0) or 0)
+            price = float(item.get("unit_price", 0) or 0)
             row_vals = [i, item.get("category",""), item.get("description",""),
                         qty, item.get("unit",""), price, vendor, t_ratio, t_amt, l_ratio, l_amt, ""]
         else:
@@ -812,7 +1152,6 @@ def _build_invoice_sheet(ws, data, items, landlord_rate, tenant_rate, tax_rate, 
                 vertical="center")
         ws.row_dimensions[r].height = 18
 
-    # ── Rows31〜33: 小計・消費税・合計 ──────────────────
     tax_pct = int(tax_rate * 100)
     r = 31
     for label, v_val, t_val, l_val in [
@@ -831,10 +1170,8 @@ def _build_invoice_sheet(ws, data, items, landlord_rate, tenant_rate, tax_rate, 
             apply_data_style(c, bg_color="FFF2CC", bold=True, align="right")
         ws.row_dimensions[r].height = 18; r += 1
 
-    # ── 敷金精算明細（借主請求書のみ）───────────────────
     if mode == "tenant" and deposit_val > 0:
         r34 = 34
-        # セクションタイトル
         fill_row_borders(ws, r34, 1, 12, "E3F2FD")
         ws.merge_cells(start_row=r34, start_column=1, end_row=r34, end_column=12)
         c = ws.cell(row=r34, column=1, value="【敷金精算明細】")
@@ -861,20 +1198,16 @@ def _build_invoice_sheet(ws, data, items, landlord_rate, tenant_rate, tax_rate, 
             ws.row_dimensions[rn].height = 18
 
         rn = 35
-        # 工事費（税込）
         dep_row(ws, rn, "原状回復工事費合計（借主負担・税込）", int(req_tax), bg="EEF5FF", bold=True)
         rn += 1
-        # 敷金控除
         dep_row(ws, rn, f"△ 敷金（{holder_label}お預かり分）", int(deposit_val), bg="EEF5FF", prefix="▲ ")
         rn += 1
         if amort_amount > 0:
             dep_row(ws, rn, f"　　うち償却（{amort_months}ヶ月分・敷金より控除）", int(amort_amount), bg="F5F5FF", prefix="  ")
             rn += 1
-        # 差引
         dep_row(ws, rn, "敷金充当後　差引残額", int(abs(dep_balance)), bg="DDEEFF", bold=True)
         rn += 1
 
-        # 結果：返金 or 追加請求
         if is_refund:
             label  = f"返金額　（{holder_label}より借主様へご返金）"
             bg_bal = "E8F5E9"; col_bal = "1B5E20"
@@ -897,12 +1230,10 @@ def _build_invoice_sheet(ws, data, items, landlord_rate, tenant_rate, tax_rate, 
         ws.row_dimensions[rn].height = 22
         rn += 2
 
-        # 振込先セクション
         furikomi_start = rn
     else:
         furikomi_start = 34
 
-    # ── 振込先・返金口座 ──────────────────────────────
     if mode == "tenant" and deposit_val > 0 and is_refund:
         furikomi_title = "【返金口座（借主様ご指定口座）】"
         furikomi_note  = "上記口座へ　　　年　　月　　日までにご返金いたします。"
@@ -941,24 +1272,20 @@ def _build_proposal_sheet(ws, data, proposals, photos=None):
     landlord_name    = data.get("landlord_name", "")
     issue_date       = datetime.now().strftime("%Y年%m月%d日")
 
-    # 列幅設定
     col_w = {"A":5,"B":28,"C":28,"D":22,"E":14,"F":22}
     for col, w in col_w.items():
         ws.column_dimensions[col].width = w
 
-    # ── Row1: 発行日
     ws["A1"] = f"発行日：{issue_date}"
     ws["A1"].font = Font(name="Yu Gothic UI", size=9, color="555555")
     ws.row_dimensions[1].height = 14
 
-    # ── Row2: タイトル
     ws.merge_cells("B2:E2")
     c = ws["B2"]; c.value = "リノベーション提案書"
     c.font = Font(name="Yu Gothic UI", bold=True, size=20, color="2E7D32")
     c.alignment = Alignment(horizontal="center", vertical="center")
     ws.row_dimensions[2].height = 34
 
-    # ── Row3: 宛名（左）+ 会社名（右）
     ws.merge_cells("A3:C3")
     c = ws["A3"]; c.value = f"{landlord_name}　様" if landlord_name else "　　　　　様"
     c.font = Font(name="Yu Gothic UI", bold=True, size=14)
@@ -969,7 +1296,6 @@ def _build_proposal_sheet(ws, data, proposals, photos=None):
     c.alignment = Alignment(horizontal="right", vertical="center")
     ws.row_dimensions[3].height = 26
 
-    # ── Row4: キャッチコピー + 会社住所
     ws.merge_cells("A4:C4")
     c = ws["A4"]; c.value = "次の入居者獲得に向けた、付加価値向上のご提案です。"
     c.font = Font(name="Yu Gothic UI", size=10, color="2E7D32", bold=True)
@@ -980,7 +1306,6 @@ def _build_proposal_sheet(ws, data, proposals, photos=None):
     c.alignment = Alignment(horizontal="right", vertical="center")
     ws.row_dimensions[4].height = 20
 
-    # ── Row5-7: 物件情報
     prop_rows = [("物件名", property_name), ("物件住所", property_address), ("担当", staff_name)]
     for idx, (label, val) in enumerate(prop_rows):
         rn = 5 + idx
@@ -996,9 +1321,8 @@ def _build_proposal_sheet(ws, data, proposals, photos=None):
         c.border = make_border()
         ws.row_dimensions[rn].height = 16
 
-    ws.row_dimensions[8].height = 6  # スペーサー
+    ws.row_dimensions[8].height = 6
 
-    # ── Row9: 概要説明
     ws.merge_cells("A9:F9")
     c = ws["A9"]
     c.value = "【ご提案の目的】原状回復工事と同時に行うことで、工事費を抑えながら物件の魅力を高め、空室期間の短縮・賃料維持・次期入居者の獲得に繋げます。"
@@ -1010,7 +1334,6 @@ def _build_proposal_sheet(ws, data, proposals, photos=None):
 
     ws.row_dimensions[10].height = 6
 
-    # ── Row11-12: テーブルヘッダー
     row_h = 11
     ws.merge_cells(start_row=row_h, start_column=1, end_row=row_h+1, end_column=1)
     c = ws.cell(row=row_h, column=1, value="No."); apply_header_style(c, "2E7D32")
@@ -1027,7 +1350,6 @@ def _build_proposal_sheet(ws, data, proposals, photos=None):
     ws.row_dimensions[row_h].height = 20
     ws.row_dimensions[row_h+1].height = 16
 
-    # ── データ行
     PHOTO_ROW_HEIGHT = 90
     r = 13
     total_cost = 0
@@ -1056,15 +1378,12 @@ def _build_proposal_sheet(ws, data, proposals, photos=None):
         c = ws.cell(row=r, column=5, value=cost)
         c.number_format = '#,##0"円"'; c.alignment = Alignment(horizontal="right", vertical="top")
 
-        # 写真埋め込み
         photo_bytes = photos.get(i)
         if photo_bytes:
             try:
                 with tempfile.NamedTemporaryFile(suffix=".jpg", delete=False) as tmp:
-                    # JPEG変換
                     img = PILImage.open(BytesIO(photo_bytes))
                     img = img.convert("RGB")
-                    # 縮小（最大 220x160px）
                     img.thumbnail((220, 160), PILImage.LANCZOS)
                     img.save(tmp.name, "JPEG", quality=85)
                     temp_files.append(tmp.name)
@@ -1084,7 +1403,6 @@ def _build_proposal_sheet(ws, data, proposals, photos=None):
 
         r += 1
 
-    # ── 合計行
     fill_row_borders(ws, r, 1, 6, "E8F5E9")
     ws.merge_cells(start_row=r, start_column=1, end_row=r, end_column=4)
     c = ws.cell(row=r, column=1, value="提案合計（税込）")
@@ -1098,7 +1416,6 @@ def _build_proposal_sheet(ws, data, proposals, photos=None):
     ws.row_dimensions[r].height = 22
     r += 2
 
-    # ── 備考・クロージング
     ws.merge_cells(start_row=r, start_column=1, end_row=r, end_column=6)
     c = ws.cell(row=r, column=1, value="【ご注意】上記概算費用は現時点での目安です。現地確認後に正式なお見積りをご提出いたします。")
     c.font = Font(name="Yu Gothic UI", size=9, color="666666")
@@ -1114,7 +1431,6 @@ def _build_proposal_sheet(ws, data, proposals, photos=None):
 
     ws.freeze_panes = "A13"
 
-    # 一時ファイル削除
     for tmp_path in temp_files:
         try:
             os.unlink(tmp_path)

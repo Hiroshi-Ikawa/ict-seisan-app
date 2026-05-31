@@ -1,0 +1,370 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <title>{{ '借主請求書' if sheet_type == 'tenant' else '貸主請求書' }} - {{ data.get('property_name','') }}</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: "Yu Gothic UI", "Hiragino Kaku Gothic ProN", "Meiryo", sans-serif;
+      font-size: 12px;
+      color: #222;
+      background: #fff;
+      padding: 24px 32px;
+    }
+    .print-btn {
+      text-align: right;
+      margin-bottom: 16px;
+    }
+    .print-btn button {
+      background: #1F3864;
+      color: #fff;
+      border: none;
+      border-radius: 4px;
+      padding: 8px 20px;
+      font-size: 13px;
+      cursor: pointer;
+    }
+    .header-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-end;
+      margin-bottom: 10px;
+    }
+    .company-info {
+      text-align: right;
+      font-size: 11px;
+      color: #555;
+      line-height: 1.6;
+    }
+    .company-info strong {
+      font-size: 13px;
+      color: #1F3864;
+    }
+    h1.doc-title {
+      font-size: 22px;
+      color: #1F3864;
+      text-align: center;
+      margin-bottom: 14px;
+      border-bottom: 2px solid #1F3864;
+      padding-bottom: 6px;
+    }
+    .meta-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 6px 20px;
+      margin-bottom: 14px;
+      font-size: 11px;
+    }
+    .meta-grid .meta-item {
+      display: flex;
+      gap: 8px;
+    }
+    .meta-item .label {
+      font-weight: bold;
+      color: #1F3864;
+      min-width: 70px;
+    }
+    .amount-box {
+      border: 2px solid;
+      border-radius: 6px;
+      padding: 10px 20px;
+      text-align: center;
+      margin-bottom: 16px;
+    }
+    .amount-box.refund {
+      border-color: #2e7d32;
+      background: #e8f5e9;
+    }
+    .amount-box.claim {
+      border-color: #c62828;
+      background: #ffebee;
+    }
+    .amount-box.normal {
+      border-color: #1F3864;
+      background: #f0f4ff;
+    }
+    .amount-box .box-label {
+      font-size: 12px;
+      font-weight: bold;
+      margin-bottom: 4px;
+    }
+    .amount-box .box-value {
+      font-size: 26px;
+      font-weight: bold;
+    }
+    .amount-box.refund .box-value { color: #1b5e20; }
+    .amount-box.claim .box-value  { color: #b71c1c; }
+    .amount-box.normal .box-value { color: #1F3864; }
+    table.items {
+      width: 100%;
+      border-collapse: collapse;
+      margin-bottom: 10px;
+      font-size: 11px;
+    }
+    table.items th {
+      background: #1F3864;
+      color: #fff;
+      padding: 5px 6px;
+      text-align: center;
+      border: 1px solid #888;
+    }
+    table.items td {
+      padding: 4px 6px;
+      border: 1px solid #ccc;
+      vertical-align: middle;
+    }
+    table.items tr.burden-tenant { background: #fce4d6; }
+    table.items tr.burden-landlord { background: #d9e1f2; }
+    table.items tr.burden-both { background: #e2efda; }
+    table.items tr.burden-custom { background: #fff8e1; }
+    table.items .text-right { text-align: right; }
+    table.items .text-center { text-align: center; }
+    table.items tfoot td {
+      font-weight: bold;
+      background: #fff9c4;
+      border: 1px solid #aaa;
+    }
+    .deposit-section {
+      border: 1px solid #90caf9;
+      border-radius: 6px;
+      padding: 12px;
+      margin-bottom: 14px;
+      background: #e3f2fd;
+    }
+    .deposit-section h3 {
+      font-size: 12px;
+      color: #1F3864;
+      margin-bottom: 8px;
+      font-weight: bold;
+    }
+    .dep-row {
+      display: flex;
+      justify-content: space-between;
+      padding: 3px 0;
+      border-bottom: 1px dotted #90caf9;
+      font-size: 11px;
+    }
+    .dep-row:last-child { border-bottom: none; }
+    .dep-row.bold { font-weight: bold; font-size: 12px; }
+    .result-box {
+      border-radius: 6px;
+      padding: 8px 16px;
+      text-align: right;
+      font-weight: bold;
+      font-size: 14px;
+      margin-top: 6px;
+    }
+    .result-box.refund { background: #e8f5e9; color: #1b5e20; border: 1px solid #a5d6a7; }
+    .result-box.claim  { background: #ffebee; color: #b71c1c; border: 1px solid #ef9a9a; }
+    .furikomi {
+      border: 1px dashed #aaa;
+      border-radius: 4px;
+      padding: 10px 16px;
+      font-size: 11px;
+      margin-bottom: 14px;
+    }
+    .furikomi h3 { font-size: 12px; font-weight: bold; margin-bottom: 6px; color: #1F3864; }
+    .furikomi-blank {
+      height: 28px;
+      border-bottom: 1px solid #aaa;
+      margin-bottom: 4px;
+    }
+    footer {
+      text-align: center;
+      font-size: 10px;
+      color: #888;
+      margin-top: 20px;
+    }
+    @media print {
+      .print-btn { display: none; }
+      body { padding: 10px 16px; }
+      @page { margin: 10mm; }
+    }
+  </style>
+</head>
+<body>
+
+<div class="print-btn">
+  <button onclick="window.print()">🖨️ 印刷 / PDF保存</button>
+</div>
+
+<div class="header-row">
+  <div>
+    <div style="font-size:10px; color:#888;">発行日：{{ now }}</div>
+    {% if sheet_type == 'tenant' %}
+    <div style="font-size:15px; font-weight:bold; color:#8B2500; margin-top:4px;">{{ data.get('tenant_name','') }}　様</div>
+    {% else %}
+    <div style="font-size:15px; font-weight:bold; color:#1F3864; margin-top:4px;">{{ data.get('landlord_name','') }}　様</div>
+    {% endif %}
+  </div>
+  <div class="company-info">
+    <strong>株式会社 ライフアドバンス</strong><br>
+    東京都渋谷区東3-25-11 TOKYU REIT恵比寿ビル4階<br>
+    TEL: 03-6421-0544
+  </div>
+</div>
+
+<h1 class="doc-title">{{ '借主　ご請求書' if sheet_type == 'tenant' else '貸主　ご請求書' }}</h1>
+
+<div class="meta-grid">
+  <div class="meta-item"><span class="label">物件名</span><span>{{ data.get('property_name','') }}</span></div>
+  <div class="meta-item"><span class="label">物件住所</span><span>{{ data.get('property_address','') }}</span></div>
+  <div class="meta-item"><span class="label">施工会社</span><span>{{ data.get('company_name','') }}</span></div>
+  <div class="meta-item"><span class="label">担当者</span><span>{{ data.get('staff_name','') }}</span></div>
+</div>
+
+<!-- 請求金額ボックス -->
+{% if sheet_type == 'tenant' and deposit_val > 0 %}
+  {% if is_refund %}
+  <div class="amount-box refund">
+    <div class="box-label">返金予定額（税込）</div>
+    <div class="box-value">¥{{ "{:,}".format(net_amount) }}</div>
+  </div>
+  {% else %}
+  <div class="amount-box claim">
+    <div class="box-label">ご請求金額（敷金精算後・税込）</div>
+    <div class="box-value">¥{{ "{:,}".format(net_amount) }}</div>
+  </div>
+  {% endif %}
+{% elif sheet_type == 'landlord' %}
+<div class="amount-box normal">
+  <div class="box-label">貸主様ご負担合計（税込）</div>
+  <div class="box-value">¥{{ "{:,}".format(landlord_tax) }}</div>
+</div>
+{% else %}
+<div class="amount-box normal">
+  <div class="box-label">ご請求金額（税込）</div>
+  <div class="box-value">¥{{ "{:,}".format(tenant_tax) }}</div>
+</div>
+{% endif %}
+
+<!-- 工事明細テーブル -->
+<table class="items">
+  <thead>
+    <tr>
+      <th style="width:30px;">No</th>
+      <th style="min-width:120px;">工事項目</th>
+      <th style="min-width:140px;">仕様備考</th>
+      <th style="width:50px;">数量</th>
+      <th style="width:40px;">単位</th>
+      <th style="width:80px;">単価</th>
+      <th style="width:80px;">業者金額</th>
+      {% if sheet_type == 'landlord' %}
+      <th style="width:80px;">貸主請求額</th>
+      {% else %}
+      <th style="width:80px;">借主請求額</th>
+      {% endif %}
+    </tr>
+  </thead>
+  <tbody>
+    {% for row in rows %}
+    {% set tr_val = row.get('t_amt', 0) %}
+    {% set lr_val = row.get('l_amt', 0) %}
+    {% if row.burden == '借' %}
+      {% set row_class = 'burden-tenant' %}
+    {% elif row.burden == '貸' %}
+      {% set row_class = 'burden-landlord' %}
+    {% elif row.burden == '両' %}
+      {% set row_class = 'burden-both' %}
+    {% else %}
+      {% set row_class = 'burden-custom' %}
+    {% endif %}
+    <tr class="{{ row_class }}">
+      <td class="text-center">{{ loop.index }}</td>
+      <td>{{ row.category }}</td>
+      <td>{{ row.description }}</td>
+      <td class="text-right">{{ row.quantity }}</td>
+      <td class="text-center">{{ row.unit }}</td>
+      <td class="text-right">¥{{ "{:,}".format(row.unit_price | int) }}</td>
+      <td class="text-right">¥{{ "{:,}".format(row.vendor) }}</td>
+      {% if sheet_type == 'landlord' %}
+      <td class="text-right">¥{{ "{:,}".format(row.l_amt) }}</td>
+      {% else %}
+      <td class="text-right">¥{{ "{:,}".format(row.t_amt) }}</td>
+      {% endif %}
+    </tr>
+    {% endfor %}
+  </tbody>
+  <tfoot>
+    {% set tax_pct = (data.get('tax_rate', 0.10) | float * 100) | int %}
+    <tr>
+      <td colspan="6" class="text-right">小計（税抜）</td>
+      <td class="text-right">¥{{ "{:,}".format(rows | sum(attribute='vendor')) }}</td>
+      {% if sheet_type == 'landlord' %}
+      <td class="text-right">¥{{ "{:,}".format(landlord_ex) }}</td>
+      {% else %}
+      <td class="text-right">¥{{ "{:,}".format(tenant_ex) }}</td>
+      {% endif %}
+    </tr>
+    <tr>
+      <td colspan="6" class="text-right">消費税 {{ tax_pct }}%</td>
+      {% set vendor_sum = rows | sum(attribute='vendor') %}
+      <td class="text-right">¥{{ "{:,}".format((vendor_sum * data.get('tax_rate', 0.10) | float) | int) }}</td>
+      {% if sheet_type == 'landlord' %}
+      <td class="text-right">¥{{ "{:,}".format((landlord_ex * data.get('tax_rate', 0.10) | float) | int) }}</td>
+      {% else %}
+      <td class="text-right">¥{{ "{:,}".format((tenant_ex * data.get('tax_rate', 0.10) | float) | int) }}</td>
+      {% endif %}
+    </tr>
+    <tr>
+      <td colspan="6" class="text-right">合計（税込）</td>
+      {% set vendor_sum = rows | sum(attribute='vendor') %}
+      <td class="text-right">¥{{ "{:,}".format((vendor_sum * (1 + data.get('tax_rate', 0.10) | float)) | int) }}</td>
+      {% if sheet_type == 'landlord' %}
+      <td class="text-right">¥{{ "{:,}".format(landlord_tax) }}</td>
+      {% else %}
+      <td class="text-right">¥{{ "{:,}".format(tenant_tax) }}</td>
+      {% endif %}
+    </tr>
+  </tfoot>
+</table>
+
+<!-- 敷金精算明細（借主のみ） -->
+{% if sheet_type == 'tenant' and deposit_val > 0 %}
+<div class="deposit-section">
+  <h3>【敷金精算明細】</h3>
+  <div class="dep-row bold">
+    <span>原状回復工事費合計（借主負担・税込）</span>
+    <span>¥{{ "{:,}".format(tenant_tax) }}</span>
+  </div>
+  <div class="dep-row">
+    <span>△ 敷金（お預かり分）</span>
+    <span>▲ ¥{{ "{:,}".format(deposit_val | int) }}</span>
+  </div>
+  <div class="dep-row bold">
+    <span>敷金充当後　差引残額</span>
+    <span>¥{{ "{:,}".format(dep_balance | abs) }}</span>
+  </div>
+  {% if is_refund %}
+  <div class="result-box refund">返金額：¥{{ "{:,}".format(net_amount) }}　→ 指定口座へご返金</div>
+  {% else %}
+  <div class="result-box claim">追加ご請求額：¥{{ "{:,}".format(net_amount) }}　→ 下記口座へお振込ください</div>
+  {% endif %}
+</div>
+{% endif %}
+
+<!-- 振込先 -->
+<div class="furikomi">
+  {% if sheet_type == 'tenant' and deposit_val > 0 and is_refund %}
+  <h3>【返金口座（借主様ご指定口座）】</h3>
+  {% else %}
+  <h3>【振込先】</h3>
+  {% endif %}
+  <div class="furikomi-blank"></div>
+  <div class="furikomi-blank"></div>
+  <div style="margin-top:8px; font-size:10px; color:#555;">
+    {% if sheet_type == 'tenant' and deposit_val > 0 and is_refund %}
+    上記口座へ　　　年　　月　　日までにご返金いたします。
+    {% else %}
+    上記口座へ　　　年　　月　　日までにお振込お願いいたします。
+    {% endif %}
+  </div>
+</div>
+
+<footer>
+  恵比寿不動産（株式会社ライフアドバンス）　賃貸管理事業部　TEL: 03-6421-0544
+</footer>
+
+</body>
+</html>
