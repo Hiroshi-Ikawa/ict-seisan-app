@@ -136,12 +136,39 @@
             <input type="text" id="staffName" placeholder="例：山田太郎">
           </div>
           <div class="form-group">
-            <label>敷金（円）</label>
-            <input type="number" id="deposit" placeholder="例：150000" min="0">
+            <label>月額賃料（円）</label>
+            <input type="number" id="monthlyRent" placeholder="例：100000" min="0" oninput="calcDeposit()">
           </div>
         </div>
 
         <hr style="margin: 16px 0; border-color: #eee;">
+
+        <!-- 敷金詳細 -->
+        <div style="background:#f0f4ff; border-radius:6px; padding:14px; margin-bottom:14px;">
+          <div style="font-weight:bold; font-size:13px; color:#1F3864; margin-bottom:10px;">💰 敷金・精算設定</div>
+          <div style="display:grid; grid-template-columns:repeat(4,1fr); gap:12px; flex-wrap:wrap;">
+            <div class="form-group">
+              <label>敷金（円）</label>
+              <input type="number" id="deposit" placeholder="例：200000" min="0" oninput="calcDeposit()">
+            </div>
+            <div class="form-group">
+              <label>償却（ヶ月）</label>
+              <input type="number" id="amortizationMonths" placeholder="例：1" min="0" step="0.5" oninput="calcDeposit()">
+            </div>
+            <div class="form-group">
+              <label>敷金の預かり先</label>
+              <select id="depositHolder" style="padding:7px 10px; border:1px solid #ccc; border-radius:4px; font-family:inherit; font-size:13px; width:100%;" onchange="calcDeposit()">
+                <option value="landlord">貸主預かり</option>
+                <option value="company">当社（ライフアドバンス）預かり</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label>有効敷金（敷金－償却）</label>
+              <div id="effectiveDeposit" style="padding:7px 10px; background:#fff; border:1px solid #1F3864; border-radius:4px; font-size:13px; font-weight:bold; color:#1F3864;">¥0</div>
+            </div>
+          </div>
+          <div id="depositDetail" style="font-size:12px; color:#555; margin-top:8px;"></div>
+        </div>
 
         <div class="rate-grid">
           <div class="rate-group">
@@ -620,20 +647,23 @@ function calcTotals() {
   document.getElementById('summaryProfit').textContent = fmt(profit);
   document.getElementById('summaryRate').textContent = profitRate.toFixed(1) + '%';
 
-  // 敷金残高判定
+  // 敷金残高判定（有効敷金ベース）
   const deposit = parseFloat(document.getElementById('deposit').value || 0) || 0;
+  const effective = getEffectiveDeposit();
+  const holder = document.getElementById('depositHolder')?.value || 'landlord';
+  const holderLabel = holder === 'company' ? '当社精算' : '貸主精算';
   const depositEl = document.getElementById('summaryDeposit');
   const depositAlertEl = document.getElementById('depositAlert');
   if (deposit > 0) {
-    const balance = deposit - tenantTax;
+    const balance = effective - tenantTax;
     if (balance >= 0) {
       depositEl.textContent = fmt(balance) + ' 返金';
       depositEl.style.color = '#2e7d32';
-      if (depositAlertEl) depositAlertEl.innerHTML = `<div class="alert" style="background:#e8f5e9;border:1px solid #66bb6a;color:#1b5e20;">✅ 敷金内で収まります。借主への返金額：<strong>${fmt(balance)}</strong></div>`;
+      if (depositAlertEl) depositAlertEl.innerHTML = `<div class="alert" style="background:#e8f5e9;border:1px solid #66bb6a;color:#1b5e20;">✅ 敷金内で収まります。返金額：<strong>${fmt(balance)}</strong>（${holderLabel}）</div>`;
     } else {
       depositEl.textContent = fmt(Math.abs(balance)) + ' 追加請求';
       depositEl.style.color = '#c62828';
-      if (depositAlertEl) depositAlertEl.innerHTML = `<div class="alert alert-error">⚠️ 敷金超過。借主への追加請求が必要：<strong>${fmt(Math.abs(balance))}</strong></div>`;
+      if (depositAlertEl) depositAlertEl.innerHTML = `<div class="alert alert-error">⚠️ 敷金超過。追加請求：<strong>${fmt(Math.abs(balance))}</strong>（${holderLabel}）</div>`;
     }
   } else {
     depositEl.textContent = '敷金未入力';
@@ -656,7 +686,37 @@ function parseFmt(s) {
 ['landlordRate', 'tenantRate', 'taxRate'].forEach(id => {
   document.getElementById(id).addEventListener('input', calcTotals);
 });
-document.getElementById('deposit').addEventListener('input', calcTotals);
+
+// ========== 敷金計算 ==========
+function calcDeposit() {
+  const deposit = parseFloat(document.getElementById('deposit').value || 0) || 0;
+  const monthlyRent = parseFloat(document.getElementById('monthlyRent').value || 0) || 0;
+  const amortMonths = parseFloat(document.getElementById('amortizationMonths').value || 0) || 0;
+  const holder = document.getElementById('depositHolder').value;
+
+  const amortAmount = Math.floor(monthlyRent * amortMonths);
+  const effective = Math.max(0, deposit - amortAmount);
+
+  document.getElementById('effectiveDeposit').textContent = '¥' + effective.toLocaleString('ja-JP');
+
+  let detail = '';
+  if (deposit > 0) {
+    detail = `敷金 ¥${deposit.toLocaleString()} `;
+    if (amortAmount > 0) detail += `− 償却 ¥${amortAmount.toLocaleString()}（${amortMonths}ヶ月） = 有効敷金 ¥${effective.toLocaleString()}`;
+    detail += `　【${holder === 'company' ? '当社預かり' : '貸主預かり'}】`;
+  }
+  document.getElementById('depositDetail').textContent = detail;
+  calcTotals();
+}
+
+function getEffectiveDeposit() {
+  const deposit = parseFloat(document.getElementById('deposit').value || 0) || 0;
+  const monthlyRent = parseFloat(document.getElementById('monthlyRent').value || 0) || 0;
+  const amortMonths = parseFloat(document.getElementById('amortizationMonths').value || 0) || 0;
+  return Math.max(0, deposit - Math.floor(monthlyRent * amortMonths));
+}
+
+window.addEventListener('load', () => { loadFromLocal(); calcDeposit(); });
 
 // ========== リノベーション提案書 ==========
 let proposalCount = 0;
@@ -874,6 +934,9 @@ function buildState() {
     companyName: document.getElementById('companyName').value,
     staffName: document.getElementById('staffName').value,
     deposit: document.getElementById('deposit').value,
+    monthlyRent: document.getElementById('monthlyRent').value,
+    amortizationMonths: document.getElementById('amortizationMonths').value,
+    depositHolder: document.getElementById('depositHolder').value,
     landlordRate: document.getElementById('landlordRate').value,
     tenantRate: document.getElementById('tenantRate').value,
     taxRate: document.getElementById('taxRate').value,
@@ -900,6 +963,10 @@ function loadFromLocal() {
     document.getElementById('companyName').value = s.companyName || '';
     document.getElementById('staffName').value = s.staffName || '';
     document.getElementById('deposit').value = s.deposit || '';
+    document.getElementById('monthlyRent').value = s.monthlyRent || '';
+    document.getElementById('amortizationMonths').value = s.amortizationMonths || '';
+    if (s.depositHolder) document.getElementById('depositHolder').value = s.depositHolder;
+    calcDeposit();
     document.getElementById('landlordRate').value = s.landlordRate || '1.15';
     document.getElementById('tenantRate').value = s.tenantRate || '1.20';
     document.getElementById('taxRate').value = s.taxRate || '10';
@@ -944,6 +1011,10 @@ async function exportExcel() {
   });
 
   const proposals = getProposals();
+  const depositVal = parseFloat(document.getElementById('deposit').value || 0) || 0;
+  const monthlyRent = parseFloat(document.getElementById('monthlyRent').value || 0) || 0;
+  const amortMonths = parseFloat(document.getElementById('amortizationMonths').value || 0) || 0;
+  const amortAmount = Math.floor(monthlyRent * amortMonths);
   const payload = {
     tenant_name: document.getElementById('tenantName').value,
     landlord_name: document.getElementById('landlordName').value,
@@ -953,7 +1024,12 @@ async function exportExcel() {
     estimate_date: document.getElementById('estimateDate').value,
     company_name: document.getElementById('companyName').value,
     staff_name: document.getElementById('staffName').value,
-    deposit: parseFloat(document.getElementById('deposit').value || 0),
+    deposit: depositVal,
+    monthly_rent: monthlyRent,
+    amortization_months: amortMonths,
+    amortization_amount: amortAmount,
+    effective_deposit: Math.max(0, depositVal - amortAmount),
+    deposit_holder: document.getElementById('depositHolder').value,
     landlord_rate: parseFloat(document.getElementById('landlordRate').value),
     tenant_rate: parseFloat(document.getElementById('tenantRate').value),
     tax_rate: (parseFloat(document.getElementById('taxRate').value) || 10) / 100,

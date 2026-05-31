@@ -678,18 +678,42 @@ def _build_invoice_sheet(ws, data, items, landlord_rate, tenant_rate, tax_rate, 
             landlord_ex += int((vendor / 2) * landlord_rate)
             tenant_ex   += int((vendor / 2) * tenant_rate)
     req_ex  = tenant_ex if mode == "tenant" else landlord_ex
-    req_tax = int(req_ex * (1 + tax_rate))
+    req_tax = int(req_ex * (1 + tax_rate))  # 工事費総額（税込）
 
-    # ── Row4: ご請求金額ボックス ─────────────────────
+    # 借主請求書：敷金精算後の実請求額を算出
+    deposit_val    = float(data.get("deposit", 0) or 0)
+    effective_dep  = float(data.get("effective_deposit", deposit_val) or deposit_val)
+    amort_months   = float(data.get("amortization_months", 0) or 0)
+    amort_amount   = float(data.get("amortization_amount", 0) or 0)
+    holder         = data.get("deposit_holder", "landlord")
+    holder_label   = "当社（ライフアドバンス）" if holder == "company" else "貸主様"
+
+    if mode == "tenant" and deposit_val > 0:
+        # 差額 = 工事費 - 有効敷金
+        dep_balance = int(req_tax) - int(effective_dep)
+        is_refund   = dep_balance <= 0           # 敷金が余る → 返金
+        net_amount  = abs(dep_balance)           # 実請求額 or 返金額
+        box_label   = "返金予定額（税込）" if is_refund else "ご請求金額（敷金精算後・税込）"
+        box_color   = "E8F5E9" if is_refund else "FFEBEE"
+        box_text_color = "1B5E20" if is_refund else "B71C1C"
+    else:
+        dep_balance   = 0
+        is_refund     = False
+        net_amount    = req_tax
+        box_label     = "ご請求金額（税込）"
+        box_color     = "EEEEEE"
+        box_text_color = "1F3864"
+
+    # ── Row4: ご請求金額ボックス（敷金精算後の実額）───────
     ws.merge_cells("A4:B4")
-    c = ws["A4"]; c.value = "ご請求金額(税込)"
+    c = ws["A4"]; c.value = box_label
     c.font = Font(name="Yu Gothic UI", size=9, bold=True)
-    c.fill = PatternFill(start_color="EEEEEE", end_color="EEEEEE", fill_type="solid")
+    c.fill = PatternFill(start_color=box_color, end_color=box_color, fill_type="solid")
     c.alignment = Alignment(horizontal="center", vertical="center"); c.border = make_border()
     ws.merge_cells("C4:G4")
-    c = ws["C4"]; c.value = req_tax; c.number_format = '#,##0"円"'
-    c.font = Font(name="Yu Gothic UI", bold=True, size=16, color="1F3864")
-    c.fill = PatternFill(start_color="EEEEEE", end_color="EEEEEE", fill_type="solid")
+    c = ws["C4"]; c.value = net_amount; c.number_format = '#,##0"円"'
+    c.font = Font(name="Yu Gothic UI", bold=True, size=16, color=box_text_color)
+    c.fill = PatternFill(start_color=box_color, end_color=box_color, fill_type="solid")
     c.alignment = Alignment(horizontal="center", vertical="center"); c.border = make_border()
     ws.row_dimensions[4].height = 30
 
@@ -807,26 +831,101 @@ def _build_invoice_sheet(ws, data, items, landlord_rate, tenant_rate, tax_rate, 
             apply_data_style(c, bg_color="FFF2CC", bold=True, align="right")
         ws.row_dimensions[r].height = 18; r += 1
 
-    # ── Row34: 【振込先】────────────────────────────
-    ws.merge_cells("A34:L34")
-    c = ws["A34"]; c.value = "【振込先】"
+    # ── 敷金精算明細（借主請求書のみ）───────────────────
+    if mode == "tenant" and deposit_val > 0:
+        r34 = 34
+        # セクションタイトル
+        fill_row_borders(ws, r34, 1, 12, "E3F2FD")
+        ws.merge_cells(start_row=r34, start_column=1, end_row=r34, end_column=12)
+        c = ws.cell(row=r34, column=1, value="【敷金精算明細】")
+        c.font = Font(name="Yu Gothic UI", bold=True, size=10, color="1F3864")
+        c.fill = PatternFill(start_color="E3F2FD", end_color="E3F2FD", fill_type="solid")
+        c.border = make_border()
+        ws.row_dimensions[r34].height = 18
+
+        def dep_row(ws, rn, label, val, bold=False, bg="F8FFFE", color="000000", prefix=""):
+            fill_row_borders(ws, rn, 1, 12, bg)
+            ws.merge_cells(start_row=rn, start_column=1, end_row=rn, end_column=8)
+            c = ws.cell(row=rn, column=1, value=label)
+            c.font = Font(name="Yu Gothic UI", bold=bold, size=10, color=color)
+            c.fill = PatternFill(start_color=bg, end_color=bg, fill_type="solid")
+            c.alignment = Alignment(horizontal="right", vertical="center")
+            c.border = make_border()
+            ws.merge_cells(start_row=rn, start_column=9, end_row=rn, end_column=12)
+            c2 = ws.cell(row=rn, column=9, value=val)
+            c2.number_format = f'"{prefix}"#,##0"円"' if prefix else '#,##0"円"'
+            c2.font = Font(name="Yu Gothic UI", bold=bold, size=11 if bold else 10, color=color)
+            c2.fill = PatternFill(start_color=bg, end_color=bg, fill_type="solid")
+            c2.alignment = Alignment(horizontal="right", vertical="center")
+            c2.border = make_border()
+            ws.row_dimensions[rn].height = 18
+
+        rn = 35
+        # 工事費（税込）
+        dep_row(ws, rn, "原状回復工事費合計（借主負担・税込）", int(req_tax), bg="EEF5FF", bold=True)
+        rn += 1
+        # 敷金控除
+        dep_row(ws, rn, f"△ 敷金（{holder_label}お預かり分）", int(deposit_val), bg="EEF5FF", prefix="▲ ")
+        rn += 1
+        if amort_amount > 0:
+            dep_row(ws, rn, f"　　うち償却（{amort_months}ヶ月分・敷金より控除）", int(amort_amount), bg="F5F5FF", prefix="  ")
+            rn += 1
+        # 差引
+        dep_row(ws, rn, "敷金充当後　差引残額", int(abs(dep_balance)), bg="DDEEFF", bold=True)
+        rn += 1
+
+        # 結果：返金 or 追加請求
+        if is_refund:
+            label  = f"返金額　（{holder_label}より借主様へご返金）"
+            bg_bal = "E8F5E9"; col_bal = "1B5E20"
+        else:
+            label  = f"追加ご請求額　（上記振込先へお振込ください）"
+            bg_bal = "FFEBEE"; col_bal = "B71C1C"
+
+        fill_row_borders(ws, rn, 1, 12, bg_bal)
+        ws.merge_cells(start_row=rn, start_column=1, end_row=rn, end_column=8)
+        c = ws.cell(row=rn, column=1, value=label)
+        c.font = Font(name="Yu Gothic UI", bold=True, size=11, color=col_bal)
+        c.fill = PatternFill(start_color=bg_bal, end_color=bg_bal, fill_type="solid")
+        c.alignment = Alignment(horizontal="right", vertical="center"); c.border = make_border()
+        ws.merge_cells(start_row=rn, start_column=9, end_row=rn, end_column=12)
+        c2 = ws.cell(row=rn, column=9, value=net_amount)
+        c2.number_format = '#,##0"円"'
+        c2.font = Font(name="Yu Gothic UI", bold=True, size=13, color=col_bal)
+        c2.fill = PatternFill(start_color=bg_bal, end_color=bg_bal, fill_type="solid")
+        c2.alignment = Alignment(horizontal="right", vertical="center"); c2.border = make_border()
+        ws.row_dimensions[rn].height = 22
+        rn += 2
+
+        # 振込先セクション
+        furikomi_start = rn
+    else:
+        furikomi_start = 34
+
+    # ── 振込先・返金口座 ──────────────────────────────
+    if mode == "tenant" and deposit_val > 0 and is_refund:
+        furikomi_title = "【返金口座（借主様ご指定口座）】"
+        furikomi_note  = "上記口座へ　　　年　　月　　日までにご返金いたします。"
+    else:
+        furikomi_title = "【振込先】"
+        furikomi_note  = "上記口座へ　　　年　　月　　日までにお振込お願いいたします。"
+
+    ws.merge_cells(start_row=furikomi_start, start_column=1, end_row=furikomi_start, end_column=12)
+    c = ws.cell(row=furikomi_start, column=1, value=furikomi_title)
     c.font = Font(name="Yu Gothic UI", bold=True, size=10)
     c.border = make_border()
-    ws.row_dimensions[34].height = 18
+    ws.row_dimensions[furikomi_start].height = 18
 
-    # ── Row35〜36: 振込先記載欄（空白）──────────────────
-    for rn in [35, 36]:
+    for rn in [furikomi_start+1, furikomi_start+2]:
         ws.merge_cells(start_row=rn, start_column=1, end_row=rn, end_column=12)
         ws.cell(row=rn, column=1).border = make_border()
         ws.row_dimensions[rn].height = 18
 
-    # ── Row37: お振込期限 ──────────────────────────
-    ws.merge_cells("A37:L37")
-    c = ws["A37"]
-    c.value = "上記口座へ　　　年　　月　　日までにお振込お願いいたします。"
+    ws.merge_cells(start_row=furikomi_start+3, start_column=1, end_row=furikomi_start+3, end_column=12)
+    c = ws.cell(row=furikomi_start+3, column=1, value=furikomi_note)
     c.font = Font(name="Yu Gothic UI", size=10)
     c.border = make_border()
-    ws.row_dimensions[37].height = 22
+    ws.row_dimensions[furikomi_start+3].height = 22
 
     ws.freeze_panes = ws.cell(row=11, column=1)
 
