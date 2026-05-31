@@ -91,24 +91,25 @@
 <div class="container">
   <div id="alert-area"></div>
 
-  <!-- 契約書解析（任意）-->
+  <!-- 契約書解析（任意・複数PDF対応）-->
   <div class="card" style="border-left:4px solid #1565c0;">
     <div class="card-header" style="background:#1565c0;">
       <span class="step" style="background:#F4B942; color:#1565c0;">📄</span>
-      賃貸借契約書アップロード（任意）― 特約を読み取り負担区分を自動判定
+      契約書類アップロード（任意・複数可）― 賃貸借契約書・重説・紛争防止条例・覚書などを全部入れてAIが総合判定
     </div>
     <div class="card-body">
       <div style="display:flex; gap:16px; align-items:flex-start; flex-wrap:wrap;">
         <div style="flex:1; min-width:260px;">
-          <div class="drop-zone" id="contractDropZone" style="padding:20px;" onclick="document.getElementById('contractInput').click()">
+          <div class="drop-zone" id="contractDropZone" style="padding:16px; cursor:pointer;" onclick="document.getElementById('contractInput').click()">
             <div class="icon" style="font-size:28px;">📋</div>
-            <p style="font-size:12px; margin:6px 0;">賃貸借契約書PDFをドロップ<br>または<strong>クリックして選択</strong></p>
-            <div class="file-name" id="contractFileName" style="font-size:11px;"></div>
-            <input type="file" id="contractInput" accept=".pdf" style="display:none">
+            <p style="font-size:12px; margin:4px 0;"><strong>複数ファイルをまとめてドロップ</strong><br>またはクリックして選択（PDF複数可）</p>
+            <p style="font-size:10px; color:#888; margin:4px 0;">賃貸借契約書 / 重要事項説明書 / 紛争防止条例 / 覚書 など</p>
+            <input type="file" id="contractInput" accept=".pdf" multiple style="display:none">
           </div>
+          <div id="contractFileList" style="margin-top:6px; font-size:11px;"></div>
           <div style="margin-top:8px; text-align:center;">
             <button class="btn btn-primary" id="contractBtn" disabled onclick="analyzeContract()" style="font-size:12px; padding:6px 14px;">
-              🔍 特約を解析して負担区分を判定
+              🔍 全書類を総合解析して負担区分を判定
             </button>
           </div>
         </div>
@@ -123,23 +124,23 @@
     </div>
   </div>
 
-  <!-- STEP 1: PDF Upload -->
+  <!-- STEP 1: 見積書PDF（複数可）-->
   <div class="card">
     <div class="card-header">
       <span class="step">1</span>
-      見積書PDF アップロード
+      見積書・精算書アップロード（複数可）― 見積書・立会清算書・精算書など全部入れてAIが統合解析
     </div>
     <div class="card-body">
-      <div class="drop-zone" id="dropZone">
+      <div class="drop-zone" id="dropZone" onclick="document.getElementById('fileInput').click()" style="cursor:pointer;">
         <div class="icon">📄</div>
-        <p>PDFファイルをここにドロップ<br>またはクリックして選択</p>
-        <input type="file" id="fileInput" accept=".pdf" style="display:none">
-        <button class="btn btn-secondary" onclick="document.getElementById('fileInput').click()">ファイルを選択</button>
-        <div class="file-name" id="fileName"></div>
+        <p><strong>複数ファイルをまとめてドロップ</strong><br>またはクリックして選択（PDF複数可）</p>
+        <p style="font-size:11px; color:#888; margin-top:4px;">見積書 / 立会清算書 / 精算書 / 覚書 など</p>
+        <input type="file" id="fileInput" accept=".pdf" multiple style="display:none">
       </div>
+      <div id="estimateFileList" style="margin-top:8px; font-size:11px;"></div>
       <div style="margin-top:14px; text-align:center;">
         <button class="btn btn-primary" id="analyzeBtn" disabled onclick="analyzeFile()">
-          🔍 Claude AIで解析する
+          🔍 Claude AIで全書類を統合解析
         </button>
       </div>
     </div>
@@ -574,7 +575,45 @@ async function deleteMaster(type, id) {
   }
 }
 
-// ── 契約書解析 ─────────────────────────────────────────────────────────
+// ── 共通：複数ファイル管理ユーティリティ ──────────────────────────────────
+function makeFileListUI(files, listElId, onRemove) {
+  const el = document.getElementById(listElId);
+  if (!files || files.length === 0) { el.innerHTML = ''; return; }
+  el.innerHTML = Array.from(files).map((f, i) =>
+    `<div style="display:flex;align-items:center;gap:6px;padding:3px 0;border-bottom:1px solid #eee;">
+      <span style="font-size:11px;flex:1;color:#333;">📎 ${f.name}</span>
+      <button onclick="removeFile('${listElId}',${i})" style="background:#e53935;color:#fff;border:none;border-radius:3px;padding:1px 7px;font-size:11px;cursor:pointer;">✕</button>
+    </div>`
+  ).join('');
+}
+
+// ファイルはDataTransfer互換のために配列で管理
+let contractFiles = [];
+let estimateFiles = [];
+
+function removeFile(listElId, idx) {
+  if (listElId === 'contractFileList') {
+    contractFiles.splice(idx, 1);
+    makeFileListUI(contractFiles, 'contractFileList', true);
+    document.getElementById('contractBtn').disabled = contractFiles.length === 0;
+  } else {
+    estimateFiles.splice(idx, 1);
+    makeFileListUI(estimateFiles, 'estimateFileList', true);
+    document.getElementById('analyzeBtn').disabled = estimateFiles.length === 0;
+  }
+}
+
+function addFilesToList(newFiles, targetArray, listElId, btnId) {
+  const pdfs = Array.from(newFiles).filter(f => f.type === 'application/pdf');
+  if (pdfs.length === 0) { showAlert('PDFファイルのみ対応しています', 'error'); return; }
+  pdfs.forEach(f => {
+    if (!targetArray.find(e => e.name === f.name && e.size === f.size)) targetArray.push(f);
+  });
+  makeFileListUI(targetArray, listElId, true);
+  document.getElementById(btnId).disabled = targetArray.length === 0;
+}
+
+// ── 契約書解析（複数PDF対応）──────────────────────────────────────────────
 const contractInput = document.getElementById('contractInput');
 const contractDropZone = document.getElementById('contractDropZone');
 const contractBtn = document.getElementById('contractBtn');
@@ -583,27 +622,19 @@ contractDropZone.addEventListener('dragover', e => { e.preventDefault(); contrac
 contractDropZone.addEventListener('dragleave', () => contractDropZone.classList.remove('dragover'));
 contractDropZone.addEventListener('drop', e => {
   e.preventDefault(); contractDropZone.classList.remove('dragover');
-  const file = e.dataTransfer.files[0];
-  if (file && file.type === 'application/pdf') {
-    contractInput.files = e.dataTransfer.files;
-    document.getElementById('contractFileName').textContent = '📎 ' + file.name;
-    contractBtn.disabled = false;
-  }
+  addFilesToList(e.dataTransfer.files, contractFiles, 'contractFileList', 'contractBtn');
 });
 contractInput.addEventListener('change', () => {
-  if (contractInput.files[0]) {
-    document.getElementById('contractFileName').textContent = '📎 ' + contractInput.files[0].name;
-    contractBtn.disabled = false;
-  }
+  addFilesToList(contractInput.files, contractFiles, 'contractFileList', 'contractBtn');
+  contractInput.value = '';
 });
 
 async function analyzeContract() {
-  const file = contractInput.files[0];
-  if (!file) return;
+  if (contractFiles.length === 0) return;
   contractBtn.disabled = true;
-  contractBtn.textContent = '🔍 解析中...';
+  contractBtn.textContent = `🔍 ${contractFiles.length}件の書類を解析中...`;
   const formData = new FormData();
-  formData.append('pdf', file);
+  contractFiles.forEach(f => formData.append('pdfs', f));
   try {
     const res = await fetch('/api/analyze-contract', { method: 'POST', body: formData });
     const data = await res.json();
@@ -616,9 +647,12 @@ async function analyzeContract() {
     if (data.property_name && !document.getElementById('propertyName').value)
       document.getElementById('propertyName').value = data.property_name;
 
+    // 解析した書類名の表示
+    const docsAnalyzed = data.documents_analyzed || contractFiles.map(f => f.name);
     const clauses = data.special_clauses || [];
     document.getElementById('specialClauses').innerHTML =
-      '<strong>📌 抽出された特約：</strong><br>' +
+      `<strong>📂 解析した書類（${docsAnalyzed.length}件）：</strong>${docsAnalyzed.map(d => `<span style="background:#e3f2fd;padding:1px 6px;border-radius:3px;margin:2px;display:inline-block;font-size:10px;">${d}</span>`).join('')}<br><br>` +
+      `<strong>📌 抽出された特約・合意：</strong><br>` +
       (clauses.length ? clauses.map(c => `・${c}`).join('<br>') : '特約の明記なし → 全項目を東京都ガイドラインで判定');
 
     const rows = Object.entries(contractBurdens).map(([cat, info]) => {
@@ -632,12 +666,12 @@ async function analyzeContract() {
 
     document.getElementById('contractResult').style.display = 'flex';
     document.getElementById('contractResult').style.flexDirection = 'column';
-    showAlert('契約書の解析が完了しました。「適用」ボタンで明細テーブルに反映できます。', 'success');
+    showAlert(`${contractFiles.length}件の書類を総合解析しました。「適用」ボタンで明細テーブルに反映できます。`, 'success');
   } catch (e) {
     showAlert('契約書解析エラー：' + e.message, 'error');
   } finally {
     contractBtn.disabled = false;
-    contractBtn.textContent = '🔍 特約を解析して負担区分を判定';
+    contractBtn.textContent = '🔍 全書類を総合解析して負担区分を判定';
   }
 }
 
@@ -657,34 +691,21 @@ function applyContractBurdens() {
   showAlert('負担区分を契約書・ガイドライン判定で更新しました。', 'success');
 }
 
-// ドロップゾーン
+// ── 見積書解析（複数PDF対応）──────────────────────────────────────────────
 const dropZone = document.getElementById('dropZone');
 const fileInput = document.getElementById('fileInput');
-const fileName = document.getElementById('fileName');
 const analyzeBtn = document.getElementById('analyzeBtn');
 
 dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('dragover'); });
 dropZone.addEventListener('dragleave', () => dropZone.classList.remove('dragover'));
 dropZone.addEventListener('drop', e => {
-  e.preventDefault();
-  dropZone.classList.remove('dragover');
-  const file = e.dataTransfer.files[0];
-  if (file && file.type === 'application/pdf') {
-    fileInput.files = e.dataTransfer.files;
-    onFileSelected(file);
-  } else {
-    showAlert('PDFファイルのみ対応しています', 'error');
-  }
+  e.preventDefault(); dropZone.classList.remove('dragover');
+  addFilesToList(e.dataTransfer.files, estimateFiles, 'estimateFileList', 'analyzeBtn');
 });
-
 fileInput.addEventListener('change', () => {
-  if (fileInput.files[0]) onFileSelected(fileInput.files[0]);
+  addFilesToList(fileInput.files, estimateFiles, 'estimateFileList', 'analyzeBtn');
+  fileInput.value = '';
 });
-
-function onFileSelected(file) {
-  fileName.textContent = '📎 ' + file.name;
-  analyzeBtn.disabled = false;
-}
 
 function showAlert(msg, type='error') {
   const area = document.getElementById('alert-area');
@@ -693,15 +714,15 @@ function showAlert(msg, type='error') {
 }
 
 async function analyzeFile() {
-  const file = fileInput.files[0];
-  if (!file) return showAlert('PDFを選択してください', 'error');
+  if (estimateFiles.length === 0) return showAlert('PDFを選択してください', 'error');
 
   const spinner = document.getElementById('spinner');
   spinner.classList.add('active');
   analyzeBtn.disabled = true;
+  analyzeBtn.textContent = `🔍 ${estimateFiles.length}件の書類を解析中...`;
 
   const formData = new FormData();
-  formData.append('pdf', file);
+  estimateFiles.forEach(f => formData.append('pdfs', f));
 
   try {
     const res = await fetch('/api/analyze', { method: 'POST', body: formData });
@@ -709,11 +730,13 @@ async function analyzeFile() {
 
     if (!res.ok) throw new Error(data.error || 'APIエラー');
 
-    document.getElementById('propertyName').value = data.property_name || '';
-    document.getElementById('estimateNumber').value = data.estimate_number || '';
-    document.getElementById('estimateDate').value = data.estimate_date || '';
-    document.getElementById('companyName').value = data.company_name || '';
-    document.getElementById('staffName').value = data.staff_name || '';
+    if (data.property_name)  document.getElementById('propertyName').value  = data.property_name;
+    if (data.estimate_number) document.getElementById('estimateNumber').value = data.estimate_number;
+    if (data.estimate_date)   document.getElementById('estimateDate').value   = data.estimate_date;
+    if (data.company_name)    document.getElementById('companyName').value    = data.company_name;
+    if (data.staff_name)      document.getElementById('staffName').value      = data.staff_name;
+    if (data.tenant_name)     document.getElementById('tenantName').value     = data.tenant_name;
+    if (data.landlord_name)   document.getElementById('landlordName').value   = data.landlord_name;
 
     document.getElementById('tableBody').innerHTML = '';
     rowCount = 0;
@@ -722,12 +745,14 @@ async function analyzeFile() {
 
     document.getElementById('sections').classList.add('visible');
     calcTotals();
-    showAlert('解析が完了しました。内容を確認・修正してください。', 'success');
+    const fileCount = estimateFiles.length;
+    showAlert(`${fileCount}件の書類を統合解析しました（${(data.items||[]).length}項目）。内容を確認・修正してください。`, 'success');
   } catch (e) {
     showAlert('解析エラー：' + e.message, 'error');
   } finally {
     spinner.classList.remove('active');
     analyzeBtn.disabled = false;
+    analyzeBtn.textContent = '🔍 Claude AIで全書類を統合解析';
   }
 }
 

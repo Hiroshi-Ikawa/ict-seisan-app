@@ -426,50 +426,66 @@ def index():
     return render_template("index.html", categories=WORK_CATEGORIES)
 
 
+def _build_pdf_content_blocks(files_dict_key):
+    """request.filesから複数PDFのdocumentブロックリストを生成"""
+    blocks = []
+    pdf_files = request.files.getlist(files_dict_key)
+    if not pdf_files or all(f.filename == "" for f in pdf_files):
+        return None, "PDFファイルが見つかりません"
+    for f in pdf_files:
+        if f.filename == "":
+            continue
+        pdf_b64 = base64.standard_b64encode(f.read()).decode("utf-8")
+        blocks.append({
+            "type": "document",
+            "source": {"type": "base64", "media_type": "application/pdf", "data": pdf_b64},
+            "title": f.filename,
+        })
+    return blocks, None
+
+
 @app.route("/api/analyze-contract", methods=["POST"])
 def analyze_contract():
-    """賃貸借契約書PDFを解析して特約内容と負担区分を返す"""
-    if "pdf" not in request.files:
-        return jsonify({"error": "PDFファイルが見つかりません"}), 400
-    pdf_file = request.files["pdf"]
-    if pdf_file.filename == "":
-        return jsonify({"error": "ファイルが選択されていません"}), 400
+    """契約書類（複数PDF可）を総合解析して特約内容と負担区分を返す"""
+    doc_blocks, err = _build_pdf_content_blocks("pdfs")
+    if err:
+        return jsonify({"error": err}), 400
     try:
-        pdf_bytes = pdf_file.read()
-        pdf_b64 = base64.standard_b64encode(pdf_bytes).decode("utf-8")
-
         categories_str = "\n".join(f"- {c}" for c in WORK_CATEGORIES)
         guideline_str = "\n".join(
             f'- {k}: デフォルト{v["burden"]}（{v["reason"]}）'
             for k, v in TOKYO_GUIDELINE_BURDEN.items()
         )
+        file_count = len(doc_blocks)
 
-        prompt = f"""この賃貸借契約書（特に「頭書(8)特約事項」「第16条 明渡し時の原状回復」）を詳しく読んでください。
+        prompt = f"""添付された{file_count}件の書類（賃貸借契約書・重要事項説明書・紛争防止条例・覚書など）を**すべて横断的に**読んで、原状回復の負担区分を総合判定してください。
 
-以下の工事項目について、特約事項の記載を確認し、各項目の負担区分を判定してください。
+【優先順位】
+1. 覚書・合意書（後日締結のもの）の記載が最優先
+2. 賃貸借契約書の特約事項
+3. 重要事項説明書の記載
+4. 紛争防止条例の内容
+5. 上記に記載なし → 東京都ガイドラインに従う
 
 【工事項目リスト】
 {categories_str}
 
-【判定ルール】
-1. 特約事項に明記がある場合 → 特約の内容に従う（basis: "契約特約"）
-2. 特約事項に記載がない場合 → 東京都ガイドラインに従う（basis: "東京都ガイドライン"）
-
-【東京都ガイドライン デフォルト値】
+【東京都ガイドライン デフォルト値（記載がない場合のみ適用）】
 {guideline_str}
 
 【重要な判定ポイント】
-- 「クリーニング費用を借主負担とする」特約があれば → ハウスクリーニング・エアコンクリーニング・浴室クリーニング等 → 借主負担
-- 「使用状況にかかわらず」という記載があれば → ガイドライン原則を上書きして借主負担
-- 「故意・過失による場合のみ」という記載 → ガイドラインに従う
-- 禁煙特約がある場合 → タバコ関連は借主負担
+- 「クリーニング費用を借主負担とする」→ ハウスクリーニング・エアコン・浴室クリーニング → 借主
+- 「使用状況にかかわらず」→ ガイドライン原則を上書きして借主負担
+- 禁煙特約あり → タバコ関連は借主全額負担
+- 複数書類で矛盾がある場合は後日締結のものを優先し、その旨をspecial_clausesに記載
 
-JSON形式のみで回答してください（説明文不要）：
+JSON形式のみで回答（説明文不要）：
 {{
   "tenant_name": "借主氏名（不明なら空文字）",
   "landlord_name": "貸主氏名（不明なら空文字）",
   "property_name": "物件名（不明なら空文字）",
-  "special_clauses": ["特約の主要内容を簡潔に列挙"],
+  "documents_analyzed": ["読み取れた書類名を列挙"],
+  "special_clauses": ["全書類から抽出した重要な特約・合意内容を簡潔に列挙"],
   "burden_assignments": {{
     "クロス張替え（全面）": {{"burden": "貸", "basis": "東京都ガイドライン", "reason": "経年劣化"}},
     "クロス張替え（部分）": {{"burden": "借", "basis": "東京都ガイドライン", "reason": "故意・過失"}},
@@ -492,32 +508,16 @@ JSON形式のみで回答してください（説明文不要）：
 
 burden値は必ず "貸"、"借"、"両" のいずれか。"""
 
+        content = doc_blocks + [{"type": "text", "text": prompt}]
         message = client.messages.create(
             model="claude-sonnet-4-5",
             max_tokens=4096,
-            messages=[
-                {
-                    "role": "user",
-                    "content": [
-                        {
-                            "type": "document",
-                            "source": {
-                                "type": "base64",
-                                "media_type": "application/pdf",
-                                "data": pdf_b64,
-                            },
-                        },
-                        {"type": "text", "text": prompt},
-                    ],
-                }
-            ],
+            messages=[{"role": "user", "content": content}],
         )
-
         response_text = message.content[0].text.strip()
         json_match = re.search(r"\{.*\}", response_text, re.DOTALL)
         if json_match:
             response_text = json_match.group()
-
         result = json.loads(response_text)
         return jsonify(result)
 
@@ -531,20 +531,22 @@ burden値は必ず "貸"、"借"、"両" のいずれか。"""
 
 @app.route("/api/analyze", methods=["POST"])
 def analyze():
-    if "pdf" not in request.files:
-        return jsonify({"error": "PDFファイルが見つかりません"}), 400
-
-    pdf_file = request.files["pdf"]
-    if pdf_file.filename == "":
-        return jsonify({"error": "ファイルが選択されていません"}), 400
+    doc_blocks, err = _build_pdf_content_blocks("pdfs")
+    if err:
+        return jsonify({"error": err}), 400
 
     try:
-        pdf_bytes = pdf_file.read()
-        pdf_b64 = base64.standard_b64encode(pdf_bytes).decode("utf-8")
-
         categories_str = "\n".join(f"- {c}" for c in WORK_CATEGORIES)
+        file_count = len(doc_blocks)
+        filenames = [b.get("title", "") for b in doc_blocks]
 
-        prompt = f"""この見積書PDFを解析して、以下の情報をJSON形式で返してください。
+        prompt = f"""添付された{file_count}件の書類（{', '.join(filenames)}）を**すべて横断的に**読んで、原状回復工事の見積明細を総合的に抽出してください。
+
+複数の書類がある場合：
+- 見積書・お見積書 → 工事項目・数量・単価を抽出
+- 立会清算書・精算書 → 合意済みの工事内容・金額を優先
+- 複数の見積書がある場合 → 全項目を統合（重複する項目は1つにまとめる）
+- 覚書・合意書 → 特記事項があれば description に記載
 
 抽出する情報：
 1. 物件情報：
@@ -553,14 +555,16 @@ def analyze():
    - estimate_date: 見積日（YYYY-MM-DD形式、不明な場合は空文字）
    - company_name: 業者名（不明な場合は空文字）
    - staff_name: 担当者名（不明な場合は空文字）
+   - tenant_name: 借主氏名（不明な場合は空文字）
+   - landlord_name: 貸主氏名（不明な場合は空文字）
 
-2. 工事明細（itemsリスト）：
+2. 工事明細（itemsリスト）：全書類から統合した全工事項目
    - category: 以下の工事分類から最も近いものを1つ選ぶ
 {categories_str}
-   - description: 仕様・備考（元の記載をそのまま）
+   - description: 仕様・備考・施工箇所（元の記載をそのまま）
    - quantity: 数量（数値）
    - unit: 単位（㎡、式、ヶ所、台など）
-   - unit_price: 単価（税抜、数値）
+   - unit_price: 単価（税抜、数値。立会清算書等で合意済み金額があればそちらを優先）
 
 レスポンスは必ず以下のJSON形式のみで返してください（説明文不要）：
 {{
@@ -569,6 +573,8 @@ def analyze():
   "estimate_date": "",
   "company_name": "",
   "staff_name": "",
+  "tenant_name": "",
+  "landlord_name": "",
   "items": [
     {{
       "category": "",
@@ -580,28 +586,11 @@ def analyze():
   ]
 }}"""
 
+        content = doc_blocks + [{"type": "text", "text": prompt}]
         message = client.messages.create(
             model="claude-sonnet-4-5",
             max_tokens=4096,
-            messages=[
-                {
-                    "role": "user",
-                    "content": [
-                        {
-                            "type": "document",
-                            "source": {
-                                "type": "base64",
-                                "media_type": "application/pdf",
-                                "data": pdf_b64,
-                            },
-                        },
-                        {
-                            "type": "text",
-                            "text": prompt,
-                        },
-                    ],
-                }
-            ],
+            messages=[{"role": "user", "content": content}],
         )
 
         response_text = message.content[0].text.strip()
