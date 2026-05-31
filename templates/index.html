@@ -670,12 +670,17 @@ async function analyzeContract() {
 
     const rows = Object.entries(contractBurdens).map(([cat, info]) => {
       const color = info.burden === '借' ? '#fce4d6' : (info.burden === '貸' ? '#d9e1f2' : '#e2efda');
-      const badge = info.basis === '契約特約' ? '<span style="background:#e53935;color:#fff;padding:1px 5px;border-radius:3px;font-size:10px;">特約</span>' :
-                    '<span style="background:#1565c0;color:#fff;padding:1px 5px;border-radius:3px;font-size:10px;">ガイドライン</span>';
-      return `<tr style="background:${color}"><td style="padding:3px 6px;">${cat}</td><td style="padding:3px 6px;text-align:center;font-weight:bold;">${info.burden}</td><td style="padding:3px 6px;">${badge} ${info.reason}</td></tr>`;
+      const isToku = info.basis && info.basis.includes('契約特約');
+      const badge = isToku
+        ? '<span style="background:#e53935;color:#fff;padding:1px 5px;border-radius:3px;font-size:10px;">特約</span>'
+        : '<span style="background:#1565c0;color:#fff;padding:1px 5px;border-radius:3px;font-size:10px;">ガイドライン</span>';
+      const amtBadge = info.fixed_amount
+        ? `<span style="background:#f57f17;color:#fff;padding:1px 6px;border-radius:3px;font-size:10px;margin-left:4px;">💴 ¥${Number(info.fixed_amount).toLocaleString()}${info.tax_included ? '（税込）' : '（税別）'}</span>`
+        : '';
+      return `<tr style="background:${color}"><td style="padding:3px 6px;">${cat}</td><td style="padding:3px 6px;text-align:center;font-weight:bold;">${info.burden}</td><td style="padding:3px 6px;">${badge}${amtBadge} ${info.reason}</td></tr>`;
     }).join('');
     document.getElementById('burdenTable').innerHTML =
-      `<table style="width:100%;border-collapse:collapse;"><thead><tr style="background:#1F3864;color:#fff;"><th style="padding:4px 6px;text-align:left;">工事項目</th><th style="padding:4px 6px;">負担</th><th style="padding:4px 6px;text-align:left;">根拠・理由</th></tr></thead><tbody>${rows}</tbody></table>`;
+      `<table style="width:100%;border-collapse:collapse;"><thead><tr style="background:#1F3864;color:#fff;"><th style="padding:4px 6px;text-align:left;">工事項目</th><th style="padding:4px 6px;">負担</th><th style="padding:4px 6px;text-align:left;">根拠・金額・理由</th></tr></thead><tbody>${rows}</tbody></table>`;
 
     document.getElementById('contractResult').style.display = 'flex';
     document.getElementById('contractResult').style.flexDirection = 'column';
@@ -691,18 +696,50 @@ async function analyzeContract() {
 
 function applyContractBurdens() {
   if (!Object.keys(contractBurdens).length) return;
+  let fixedCount = 0;
   document.querySelectorAll('#tableBody tr').forEach(tr => {
     const categorySelect = tr.querySelectorAll('select')[0];
-    const burdenSelect = tr.querySelectorAll('select')[1];
+    const burdenSelect   = tr.querySelectorAll('select')[1];
     if (!categorySelect || !burdenSelect) return;
     const cat = categorySelect.value;
-    if (contractBurdens[cat]) {
-      burdenSelect.value = contractBurdens[cat].burden;
-      updateRowClass(tr, contractBurdens[cat].burden);
+    const info = contractBurdens[cat];
+    if (!info) return;
+
+    // 負担区分を更新
+    burdenSelect.value = info.burden;
+    updateRowClass(tr, info.burden);
+
+    // 特約に金額が明記されている場合は単価に反映
+    if (info.fixed_amount && info.fixed_amount > 0) {
+      const inputs = tr.querySelectorAll('input[type="number"]');
+      // 単価はinputs[1]（0番目が数量）
+      if (inputs[1]) {
+        // 税込金額の場合は税抜に変換
+        const taxRate = (parseFloat(document.getElementById('taxRate').value) || 10) / 100;
+        const priceExTax = info.tax_included
+          ? Math.round(info.fixed_amount / (1 + taxRate))
+          : info.fixed_amount;
+        inputs[1].value = priceExTax;
+
+        // 数量が0なら1にセット
+        if (!inputs[0].value || parseFloat(inputs[0].value) === 0) inputs[0].value = 1;
+
+        // 単位も「式」にセット（空の場合）
+        const unitInput = tr.querySelectorAll('input[type="text"]')[1];
+        if (unitInput && !unitInput.value) unitInput.value = '式';
+
+        fixedCount++;
+        // セルをハイライト
+        inputs[1].style.background = '#fff9c4';
+        inputs[1].title = `特約記載金額：¥${info.fixed_amount.toLocaleString()}（${info.tax_included ? '税込' : '税別'}）`;
+      }
     }
   });
   calcTotals();
-  showAlert('負担区分を契約書・ガイドライン判定で更新しました。', 'success');
+  const msg = fixedCount > 0
+    ? `負担区分を更新しました。特約に金額が明記されている${fixedCount}項目の単価も自動入力しました（黄色ハイライト）。`
+    : '負担区分を契約書・ガイドライン判定で更新しました。';
+  showAlert(msg, 'success');
 }
 
 // ── 見積書解析（複数PDF対応）──────────────────────────────────────────────
