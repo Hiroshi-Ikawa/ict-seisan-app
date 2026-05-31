@@ -76,6 +76,10 @@
             <input type="text" id="tenantName" placeholder="例：野島 靖太">
           </div>
           <div class="form-group">
+            <label>貸主名</label>
+            <input type="text" id="landlordName" placeholder="例：吉川 景行">
+          </div>
+          <div class="form-group">
             <label>物件名</label>
             <input type="text" id="propertyName" placeholder="例：エビスコート301">
           </div>
@@ -603,6 +607,7 @@ function buildState() {
   });
   return {
     tenantName: document.getElementById('tenantName').value,
+    landlordName: document.getElementById('landlordName').value,
     propertyName: document.getElementById('propertyName').value,
     propertyAddress: document.getElementById('propertyAddress').value,
     estimateNumber: document.getElementById('estimateNumber').value,
@@ -628,6 +633,7 @@ function loadFromLocal() {
   try {
     const s = JSON.parse(raw);
     document.getElementById('tenantName').value = s.tenantName || '';
+    document.getElementById('landlordName').value = s.landlordName || '';
     document.getElementById('propertyName').value = s.propertyName || '';
     document.getElementById('propertyAddress').value = s.propertyAddress || '';
     document.getElementById('estimateNumber').value = s.estimateNumber || '';
@@ -680,6 +686,7 @@ async function exportExcel() {
 
   const payload = {
     tenant_name: document.getElementById('tenantName').value,
+    landlord_name: document.getElementById('landlordName').value,
     property_name: document.getElementById('propertyName').value,
     property_address: document.getElementById('propertyAddress').value,
     estimate_number: document.getElementById('estimateNumber').value,

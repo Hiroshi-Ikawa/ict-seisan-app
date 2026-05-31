@@ -248,13 +248,11 @@ def create_excel(data):
 
     # ② 貸主請求書
     ws2 = wb.create_sheet("貸主請求書")
-    landlord_items = [i for i in items if i.get("burden") in ("貸", "両")]
-    _build_landlord_sheet(ws2, landlord_items, data, landlord_rate, tax_rate)
+    _build_invoice_sheet(ws2, data, items, landlord_rate, tenant_rate, tax_rate, mode="landlord")
 
-    # ③ 借主清算書
-    ws3 = wb.create_sheet("借主清算書")
-    tenant_items = [i for i in items if i.get("burden") in ("借", "両")]
-    _build_tenant_sheet(ws3, tenant_items, data, tenant_rate, tax_rate, deposit)
+    # ③ 借主請求書
+    ws3 = wb.create_sheet("借主請求書")
+    _build_invoice_sheet(ws3, data, items, landlord_rate, tenant_rate, tax_rate, mode="tenant")
 
     return wb
 
@@ -473,186 +471,194 @@ def _build_estimate_sheet(ws, data, items, landlord_rate, tenant_rate, tax_rate,
     ws.freeze_panes = ws.cell(row=row_h2 + 1, column=1)
 
 
-def _build_landlord_sheet(ws, items, data, rate, tax_rate):
-    ws.column_dimensions["A"].width = 6
-    ws.column_dimensions["B"].width = 26
-    ws.column_dimensions["C"].width = 32
-    ws.column_dimensions["D"].width = 8
-    ws.column_dimensions["E"].width = 6
-    ws.column_dimensions["F"].width = 14
-    ws.column_dimensions["G"].width = 15
-    ws.column_dimensions["H"].width = 15
-
-    ws.merge_cells("A1:H1")
-    co_cell = ws["A1"]
-    co_cell.value = COMPANY_INFO
-    co_cell.font = Font(name="Yu Gothic UI", size=9, color="444444")
-    co_cell.alignment = Alignment(horizontal="left", vertical="center")
-    ws.row_dimensions[1].height = 16
-
-    ws.merge_cells("A2:H2")
-    title = ws["A2"]
-    title.value = "貸主請求書"
-    title.font = Font(name="Yu Gothic UI", bold=True, size=14, color="1F3864")
-    title.alignment = Alignment(horizontal="center", vertical="center")
-    ws.row_dimensions[2].height = 30
-
-    row = 3
-    info_labels = [("物件名", data.get("property_name", "")), ("見積番号", data.get("estimate_number", "")),
-                   ("業者名", data.get("company_name", "")), ("担当者", data.get("staff_name", ""))]
-    for label, value in info_labels:
-        ws.cell(row=row, column=1, value=label).font = Font(name="Yu Gothic UI", bold=True, size=10)
-        ws.cell(row=row, column=1).fill = PatternFill(start_color="D9E1F2", end_color="D9E1F2", fill_type="solid")
-        ws.merge_cells(start_row=row, start_column=2, end_row=row, end_column=8)
-        ws.cell(row=row, column=2, value=value).font = Font(name="Yu Gothic UI", size=10)
-        row += 1
-
-    row += 1
-
-    headers = ["No", "工事項目", "仕様備考", "数量", "単位", "原価（税抜）", "請求額（税抜）", "請求額（税込）"]
-    for col, h in enumerate(headers, 1):
-        apply_header_style(ws.cell(row=row, column=col), "1F3864")
-        ws.cell(row=row, column=col).value = h
-    ws.row_dimensions[row].height = 22
-    row += 1
-
-    subtotal_ex = 0
-    for i, item in enumerate(items, 1):
-        quantity = float(item.get("quantity", 0) or 0)
-        unit_price = float(item.get("unit_price", 0) or 0)
-        vendor_amount = int(quantity * unit_price)
-
-        burden = item.get("burden", "貸")
-        if burden == "両":
-            vendor_amount = vendor_amount // 2
-
-        charge_ex = int(vendor_amount * rate)
-        charge_tax = int(charge_ex * (1 + tax_rate))
-        subtotal_ex += charge_ex
-
-        row_data = [i, item.get("category", ""), item.get("description", ""),
-                    quantity, item.get("unit", ""), vendor_amount, charge_ex, charge_tax]
-        for col, val in enumerate(row_data, 1):
-            cell = ws.cell(row=row, column=col, value=val)
-            apply_data_style(cell, bg_color="D9E1F2",
-                             align="center" if col in (1, 4, 5) else ("right" if col >= 6 else "left"))
-            if col in (6, 7, 8):
-                cell.number_format = "#,##0"
-        ws.row_dimensions[row].height = 18
-        row += 1
-
-    total_tax = int(subtotal_ex * (1 + tax_rate))
-
-    ws.merge_cells(start_row=row, start_column=1, end_row=row, end_column=6)
-    cell = ws.cell(row=row, column=1, value="合計")
-    apply_data_style(cell, bg_color="FFF2CC", bold=True, align="center")
-    for col, val in [(7, subtotal_ex), (8, total_tax)]:
-        cell = ws.cell(row=row, column=col, value=val)
-        apply_data_style(cell, bg_color="FFF2CC", bold=True, align="right", number_format="#,##0")
+REPRESENTATIVE = "橿頭 知宏"
 
 
-def _build_tenant_sheet(ws, items, data, rate, tax_rate, deposit):
-    ws.column_dimensions["A"].width = 6
-    ws.column_dimensions["B"].width = 26
-    ws.column_dimensions["C"].width = 32
-    ws.column_dimensions["D"].width = 8
-    ws.column_dimensions["E"].width = 6
-    ws.column_dimensions["F"].width = 14
-    ws.column_dimensions["G"].width = 15
-    ws.column_dimensions["H"].width = 15
+def _build_invoice_sheet(ws, data, items, landlord_rate, tenant_rate, tax_rate, mode="tenant"):
+    """mode: 'tenant'=借主請求書, 'landlord'=貸主請求書"""
+    tenant_name = data.get("tenant_name", "")
+    landlord_name = data.get("landlord_name", "")
+    property_name = data.get("property_name", "")
+    property_address = data.get("property_address", "")
+    staff_name = data.get("staff_name", "")
+    addressee = tenant_name if mode == "tenant" else landlord_name
 
-    ws.merge_cells("A1:H1")
-    co_cell = ws["A1"]
-    co_cell.value = COMPANY_INFO
-    co_cell.font = Font(name="Yu Gothic UI", size=9, color="444444")
-    co_cell.alignment = Alignment(horizontal="left", vertical="center")
-    ws.row_dimensions[1].height = 16
+    col_w = {"A":5,"B":22,"C":14,"D":7,"E":5,"F":10,"G":12,"H":7,"I":12,"J":7,"K":12,"L":22}
+    for col, w in col_w.items():
+        ws.column_dimensions[col].width = w
 
-    ws.merge_cells("A2:H2")
-    title = ws["A2"]
-    title.value = "借主清算書"
-    title.font = Font(name="Yu Gothic UI", bold=True, size=14, color="1F3864")
-    title.alignment = Alignment(horizontal="center", vertical="center")
-    ws.row_dimensions[2].height = 30
+    issue_date = datetime.now().strftime("%Y年%m月%d日")
 
-    row = 3
-    info_labels = [("物件名", data.get("property_name", "")), ("見積番号", data.get("estimate_number", "")),
-                   ("業者名", data.get("company_name", "")), ("担当者", data.get("staff_name", ""))]
-    for label, value in info_labels:
-        ws.cell(row=row, column=1, value=label).font = Font(name="Yu Gothic UI", bold=True, size=10)
-        ws.cell(row=row, column=1).fill = PatternFill(start_color="FCE4D6", end_color="FCE4D6", fill_type="solid")
-        ws.merge_cells(start_row=row, start_column=2, end_row=row, end_column=8)
-        ws.cell(row=row, column=2, value=value).font = Font(name="Yu Gothic UI", size=10)
-        row += 1
+    # Row1: 発行日
+    ws["A1"] = f"発行日：{issue_date}"
+    ws["A1"].font = Font(name="Yu Gothic UI", size=9, color="555555")
+    ws.row_dimensions[1].height = 14
 
-    row += 1
+    # Row2: タイトル（中央）
+    ws.merge_cells("C2:G2")
+    c = ws["C2"]; c.value = "ご請求書"
+    c.font = Font(name="Yu Gothic UI", bold=True, size=20, color="1F3864")
+    c.alignment = Alignment(horizontal="center", vertical="center")
+    ws.row_dimensions[2].height = 34
 
-    headers = ["No", "工事項目", "仕様備考", "数量", "単位", "原価（税抜）", "請求額（税抜）", "請求額（税込）"]
-    for col, h in enumerate(headers, 1):
-        apply_header_style(ws.cell(row=row, column=col), "1F3864")
-        ws.cell(row=row, column=col).value = h
-    ws.row_dimensions[row].height = 22
-    row += 1
+    # Row3: 宛名（左）
+    ws.merge_cells("A3:E3")
+    c = ws["A3"]; c.value = f"{addressee}　様" if addressee else "　　　　　様"
+    c.font = Font(name="Yu Gothic UI", bold=True, size=14)
+    c.alignment = Alignment(horizontal="left", vertical="bottom")
+    ws.row_dimensions[3].height = 26
 
-    subtotal_ex = 0
-    for i, item in enumerate(items, 1):
-        quantity = float(item.get("quantity", 0) or 0)
-        unit_price = float(item.get("unit_price", 0) or 0)
-        vendor_amount = int(quantity * unit_price)
-
+    # 請求金額を事前計算
+    tenant_ex = 0; landlord_ex = 0; vendor_total_pre = 0
+    for item in items:
+        qty = float(item.get("quantity", 0) or 0)
+        price = float(item.get("unit_price", 0) or 0)
+        vendor = int(qty * price)
         burden = item.get("burden", "借")
-        if burden == "両":
-            vendor_amount = vendor_amount // 2
+        vendor_total_pre += vendor
+        if burden == "貸":
+            landlord_ex += int(vendor * landlord_rate)
+        elif burden == "借":
+            tenant_ex += int(vendor * tenant_rate)
+        elif burden == "両":
+            landlord_ex += int((vendor / 2) * landlord_rate)
+            tenant_ex += int((vendor / 2) * tenant_rate)
+    req_ex = tenant_ex if mode == "tenant" else landlord_ex
+    req_tax = int(req_ex * (1 + tax_rate))
 
-        charge_ex = int(vendor_amount * rate)
-        charge_tax = int(charge_ex * (1 + tax_rate))
-        subtotal_ex += charge_ex
+    # Row4: ご請求金額ボックス
+    ws.merge_cells("A4:B4")
+    c = ws["A4"]; c.value = "ご請求金額(税込)"
+    c.font = Font(name="Yu Gothic UI", size=9, bold=True)
+    c.fill = PatternFill(start_color="EEEEEE", end_color="EEEEEE", fill_type="solid")
+    c.alignment = Alignment(horizontal="center", vertical="center"); c.border = make_border()
+    ws.merge_cells("C4:F4")
+    c = ws["C4"]; c.value = req_tax; c.number_format = '#,##0"円"'
+    c.font = Font(name="Yu Gothic UI", bold=True, size=16, color="1F3864")
+    c.fill = PatternFill(start_color="EEEEEE", end_color="EEEEEE", fill_type="solid")
+    c.alignment = Alignment(horizontal="center", vertical="center"); c.border = make_border()
+    ws.row_dimensions[4].height = 28
 
-        row_data = [i, item.get("category", ""), item.get("description", ""),
-                    quantity, item.get("unit", ""), vendor_amount, charge_ex, charge_tax]
-        for col, val in enumerate(row_data, 1):
-            cell = ws.cell(row=row, column=col, value=val)
-            apply_data_style(cell, bg_color="FCE4D6",
-                             align="center" if col in (1, 4, 5) else ("right" if col >= 6 else "left"))
-            if col in (6, 7, 8):
-                cell.number_format = "#,##0"
-        ws.row_dimensions[row].height = 18
-        row += 1
+    # 右側会社情報（Row2〜6）
+    co_rows = [
+        (2, "株式会社 ライフアドバンス", True, 12),
+        (3, "所在地：東京都渋谷区東3-25-11TOKYU REIT恵比寿ビル4階", False, 8),
+        (4, f"代表者：{REPRESENTATIVE}", False, 9),
+        (5, f"担当：{staff_name}", False, 9),
+        (6, "連絡先：", False, 9),
+    ]
+    for rn, text, bold, size in co_rows:
+        ws.merge_cells(start_row=rn, start_column=8, end_row=rn, end_column=12)
+        c = ws.cell(row=rn, column=8, value=text)
+        c.font = Font(name="Yu Gothic UI", bold=bold, size=size,
+                      color="1F3864" if bold else "444444")
+        c.alignment = Alignment(horizontal="right", vertical="center")
 
-    total_tax = int(subtotal_ex * (1 + tax_rate))
+    # Row5-7: 工事情報
+    prop_rows = [("工事件名","原状回復工事"),("物件名",property_name),("物件住所",property_address)]
+    r = 5
+    for label, value in prop_rows:
+        ws.merge_cells(start_row=r, start_column=1, end_row=r, end_column=2)
+        c = ws.cell(row=r, column=1, value=label)
+        c.font = Font(name="Yu Gothic UI", size=9, bold=True)
+        c.fill = PatternFill(start_color="E8EEF8", end_color="E8EEF8", fill_type="solid")
+        c.alignment = Alignment(horizontal="center", vertical="center"); c.border = make_border()
+        ws.merge_cells(start_row=r, start_column=3, end_row=r, end_column=7)
+        c = ws.cell(row=r, column=3, value=value)
+        c.font = Font(name="Yu Gothic UI", size=9); c.border = make_border()
+        ws.row_dimensions[r].height = 16; r += 1
 
-    ws.merge_cells(start_row=row, start_column=1, end_row=row, end_column=6)
-    cell = ws.cell(row=row, column=1, value="工事費合計（税込）")
-    apply_data_style(cell, bg_color="FFF2CC", bold=True, align="center")
-    ws.cell(row=row, column=7, value="").fill = PatternFill(start_color="FFF2CC", end_color="FFF2CC", fill_type="solid")
-    ws.cell(row=row, column=7).border = make_border()
-    cell = ws.cell(row=row, column=8, value=total_tax)
-    apply_data_style(cell, bg_color="FFF2CC", bold=True, align="right", number_format="#,##0")
-    row += 1
+    r += 1; ws.row_dimensions[r-1].height = 6
 
-    # 敷金精算
-    ws.merge_cells(start_row=row, start_column=1, end_row=row, end_column=6)
-    cell = ws.cell(row=row, column=1, value="敷金（預かり金）")
-    apply_data_style(cell, bg_color="FFF2CC", bold=True, align="center")
-    ws.cell(row=row, column=7, value="").fill = PatternFill(start_color="FFF2CC", end_color="FFF2CC", fill_type="solid")
-    ws.cell(row=row, column=7).border = make_border()
-    cell = ws.cell(row=row, column=8, value=int(deposit))
-    apply_data_style(cell, bg_color="FFF2CC", bold=True, align="right", number_format="#,##0")
-    row += 1
+    # テーブルヘッダー（2行）
+    row_h1 = r
+    for col, val in [(1,"No."),(2,"名称"),(3,"施工箇所"),(4,"数量"),(5,"単位"),(6,"単価"),(7,"金額"),(12,"備考")]:
+        ws.merge_cells(start_row=row_h1, start_column=col, end_row=row_h1+1, end_column=col)
+        c = ws.cell(row=row_h1, column=col, value=val); apply_header_style(c, "1F3864")
+    ws.merge_cells(start_row=row_h1, start_column=8, end_row=row_h1, end_column=9)
+    c = ws.cell(row=row_h1, column=8, value="借主様負担額"); apply_header_style(c, "8B2500")
+    ws.merge_cells(start_row=row_h1, start_column=10, end_row=row_h1, end_column=11)
+    c = ws.cell(row=row_h1, column=10, value="貸主様負担額"); apply_header_style(c, "1F3864")
+    ws.row_dimensions[row_h1].height = 18
 
-    balance = int(deposit) - total_tax
-    if balance >= 0:
-        label = f"返金額：¥{balance:,}"
-        bg = "E2EFDA"
-    else:
-        label = f"追加請求額：¥{abs(balance):,}"
-        bg = "FCE4D6"
+    row_h2 = row_h1 + 1
+    for col, val, bg in [(8,"割合","8B2500"),(9,"金額","8B2500"),(10,"割合","1F3864"),(11,"金額","1F3864")]:
+        c = ws.cell(row=row_h2, column=col, value=val); apply_header_style(c, bg)
+    ws.row_dimensions[row_h2].height = 16
+    r = row_h2 + 1
 
-    ws.merge_cells(start_row=row, start_column=1, end_row=row, end_column=7)
-    cell = ws.cell(row=row, column=1, value=label)
-    apply_data_style(cell, bg_color=bg, bold=True, align="center")
-    cell = ws.cell(row=row, column=8, value=abs(balance))
-    apply_data_style(cell, bg_color=bg, bold=True, align="right", number_format="#,##0")
+    # データ行（20行固定）
+    vendor_total = 0; tenant_total_ex = 0; landlord_total_ex = 0
+
+    for i in range(1, 21):
+        if i <= len(items):
+            item = items[i-1]
+            qty = float(item.get("quantity", 0) or 0)
+            price = float(item.get("unit_price", 0) or 0)
+            vendor = int(qty * price)
+            burden = item.get("burden", "借")
+            if burden == "貸":
+                t_ratio, l_ratio = "0%", "100%"
+                t_amt = 0; l_amt = int(vendor * landlord_rate)
+            elif burden == "借":
+                t_ratio, l_ratio = "100%", "0%"
+                t_amt = int(vendor * tenant_rate); l_amt = 0
+            elif burden == "両":
+                t_ratio, l_ratio = "50%", "50%"
+                t_amt = int((vendor/2)*tenant_rate); l_amt = int((vendor/2)*landlord_rate)
+            else:
+                t_ratio, l_ratio = "0%", "0%"; t_amt = l_amt = 0
+            vendor_total += vendor; tenant_total_ex += t_amt; landlord_total_ex += l_amt
+            bg = "FCE4D6" if burden=="借" else ("D9E1F2" if burden=="貸" else "E2EFDA")
+            row_vals = [i, item.get("category",""), item.get("description",""),
+                        qty, item.get("unit",""), price, vendor, t_ratio, t_amt, l_ratio, l_amt, ""]
+        else:
+            bg = None
+            row_vals = [i, "", "", "", "", "", "", "", 0, "", 0, ""]
+
+        for col, val in enumerate(row_vals, 1):
+            c = ws.cell(row=r, column=col, value=val if val != "" else None)
+            if col == 1: c.value = i
+            c.font = Font(name="Yu Gothic UI", size=10)
+            if bg: c.fill = PatternFill(start_color=bg, end_color=bg, fill_type="solid")
+            c.border = make_border()
+            if col in (6,7,9,11): c.number_format = '#,##0"円"'
+            c.alignment = Alignment(
+                horizontal="center" if col in (1,4,5,8,10) else ("right" if col in (6,7,9,11) else "left"),
+                vertical="center")
+        ws.row_dimensions[r].height = 18; r += 1
+
+    # 小計・消費税・合計
+    tax_pct = int(tax_rate * 100)
+    for label, v_val, t_val, l_val in [
+        ("小計", vendor_total, tenant_total_ex, landlord_total_ex),
+        (f"消費税　{tax_pct}%", int(vendor_total*tax_rate), int(tenant_total_ex*tax_rate), int(landlord_total_ex*tax_rate)),
+        ("合計", int(vendor_total*(1+tax_rate)), int(tenant_total_ex*(1+tax_rate)), int(landlord_total_ex*(1+tax_rate))),
+    ]:
+        ws.merge_cells(start_row=r, start_column=1, end_row=r, end_column=6)
+        c = ws.cell(row=r, column=1, value=label)
+        c.font = Font(name="Yu Gothic UI", bold=True, size=10)
+        c.fill = PatternFill(start_color="FFF2CC", end_color="FFF2CC", fill_type="solid")
+        c.alignment = Alignment(horizontal="right", vertical="center"); c.border = make_border()
+        for col, val in [(7,v_val),(9,t_val),(11,l_val)]:
+            c = ws.cell(row=r, column=col, value=val); c.number_format = '#,##0"円"'
+            apply_data_style(c, bg_color="FFF2CC", bold=True, align="right")
+        for col in [8,10,12]:
+            c = ws.cell(row=r, column=col)
+            c.fill = PatternFill(start_color="FFF2CC", end_color="FFF2CC", fill_type="solid")
+            c.border = make_border()
+        ws.row_dimensions[r].height = 18; r += 1
+
+    # 備考
+    ws.merge_cells(start_row=r, start_column=1, end_row=r, end_column=12)
+    c = ws.cell(row=r, column=1, value="【備考】")
+    c.font = Font(name="Yu Gothic UI", bold=True, size=10); c.border = make_border()
+    ws.row_dimensions[r].height = 16; r += 1
+    ws.merge_cells(start_row=r, start_column=1, end_row=r+2, end_column=12)
+    ws.cell(row=r, column=1).border = make_border()
+    ws.row_dimensions[r].height = 20
+
+    ws.freeze_panes = ws.cell(row=row_h2+1, column=1)
 
 
 if __name__ == "__main__":
