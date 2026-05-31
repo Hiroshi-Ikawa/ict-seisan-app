@@ -551,6 +551,7 @@ def analyze():
 抽出する情報：
 1. 物件情報：
    - property_name: 物件名（不明な場合は空文字）
+   - property_address: 物件住所・所在地（番地まで含めて記載、不明な場合は空文字）
    - estimate_number: 見積番号（不明な場合は空文字）
    - estimate_date: 見積日（YYYY-MM-DD形式、不明な場合は空文字）
    - company_name: 業者名（不明な場合は空文字）
@@ -569,6 +570,7 @@ def analyze():
 レスポンスは必ず以下のJSON形式のみで返してください（説明文不要）：
 {{
   "property_name": "",
+  "property_address": "物件住所（不明なら空文字）",
   "estimate_number": "",
   "estimate_date": "",
   "company_name": "",

@@ -642,10 +642,12 @@ async function analyzeContract() {
 
     contractBurdens = data.burden_assignments || {};
 
-    if (data.tenant_name) document.getElementById('tenantName').value = data.tenant_name;
-    if (data.landlord_name) document.getElementById('landlordName').value = data.landlord_name;
+    if (data.tenant_name)    document.getElementById('tenantName').value    = data.tenant_name;
+    if (data.landlord_name)  document.getElementById('landlordName').value  = data.landlord_name;
     if (data.property_name && !document.getElementById('propertyName').value)
       document.getElementById('propertyName').value = data.property_name;
+    if (data.property_address && !document.getElementById('propertyAddress').value)
+      document.getElementById('propertyAddress').value = data.property_address;
 
     // 解析した書類名の表示
     const docsAnalyzed = data.documents_analyzed || contractFiles.map(f => f.name);
@@ -730,13 +732,14 @@ async function analyzeFile() {
 
     if (!res.ok) throw new Error(data.error || 'APIエラー');
 
-    if (data.property_name)  document.getElementById('propertyName').value  = data.property_name;
-    if (data.estimate_number) document.getElementById('estimateNumber').value = data.estimate_number;
-    if (data.estimate_date)   document.getElementById('estimateDate').value   = data.estimate_date;
-    if (data.company_name)    document.getElementById('companyName').value    = data.company_name;
-    if (data.staff_name)      document.getElementById('staffName').value      = data.staff_name;
-    if (data.tenant_name)     document.getElementById('tenantName').value     = data.tenant_name;
-    if (data.landlord_name)   document.getElementById('landlordName').value   = data.landlord_name;
+    if (data.property_name)    document.getElementById('propertyName').value    = data.property_name;
+    if (data.property_address) document.getElementById('propertyAddress').value = data.property_address;
+    if (data.estimate_number)  document.getElementById('estimateNumber').value  = data.estimate_number;
+    if (data.estimate_date)    document.getElementById('estimateDate').value    = data.estimate_date;
+    if (data.company_name)     document.getElementById('companyName').value     = data.company_name;
+    if (data.staff_name)       document.getElementById('staffName').value       = data.staff_name;
+    if (data.tenant_name)      document.getElementById('tenantName').value      = data.tenant_name;
+    if (data.landlord_name)    document.getElementById('landlordName').value    = data.landlord_name;
 
     document.getElementById('tableBody').innerHTML = '';
     rowCount = 0;
