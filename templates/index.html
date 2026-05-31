@@ -230,32 +230,50 @@
             <div class="label">借主請求合計（税込）</div>
             <div class="value" id="summaryTenant">¥0</div>
           </div>
+          <div class="summary-card" style="background:#e8f5e9; border:1px solid #66bb6a;">
+            <div class="label">敷金残高（返金/追加）</div>
+            <div class="value" id="summaryDeposit" style="font-size:16px;">-</div>
+          </div>
           <div class="summary-card profit">
             <div class="label">弊社利益（税抜）</div>
             <div class="value" id="summaryProfit">¥0</div>
-          </div>
-          <div class="summary-card rate">
-            <div class="label">利益率</div>
-            <div class="value" id="summaryRate">0%</div>
           </div>
         </div>
       </div>
     </div>
 
-    <!-- STEP 5: 出力 -->
+    <!-- STEP 5: リノベーション提案書 -->
+    <div class="card" style="border-left:4px solid #2e7d32;">
+      <div class="card-header" style="background:#2e7d32;">
+        <span class="step" style="background:#F4B942; color:#2e7d32;">5</span>
+        リノベーション提案書（任意）― 次の入居者獲得に向けた付加価値工事の提案
+      </div>
+      <div class="card-body">
+        <p style="font-size:12px; color:#555; margin-bottom:12px;">
+          原状回復工事と同時に行うと費用を抑えられる追加提案を記入してください。
+          写真をアップロードするとExcelに自動埋め込みされます。
+        </p>
+        <div id="proposalList"></div>
+        <button class="btn btn-secondary" onclick="addProposal()" style="margin-top:8px; font-size:12px;">＋ 提案を追加</button>
+        <div id="proposalSummary" style="margin-top:10px; font-size:13px; font-weight:bold; color:#2e7d32;"></div>
+      </div>
+    </div>
+
+    <!-- STEP 6: 出力 -->
     <div class="card">
       <div class="card-header">
-        <span class="step">5</span>
+        <span class="step">6</span>
         Excel出力
       </div>
       <div class="card-body">
+        <div id="depositAlert" style="margin-bottom:10px;"></div>
         <div class="action-bar">
           <button class="btn btn-success" onclick="exportExcel()">
             📊 精算書Excelをダウンロード
           </button>
         </div>
         <p style="font-size:12px; color:#888; margin-top:10px; text-align:right;">
-          ① 見積入力シート　② 貸主請求書　③ 借主清算書　の3シート構成で出力されます
+          ① 負担割合表　② 貸主請求書　③ 借主請求書　④ リノベーション提案（提案ありの場合）
         </p>
       </div>
     </div>
@@ -601,6 +619,29 @@ function calcTotals() {
   document.getElementById('summaryTenant').textContent = fmt(tenantTax);
   document.getElementById('summaryProfit').textContent = fmt(profit);
   document.getElementById('summaryRate').textContent = profitRate.toFixed(1) + '%';
+
+  // 敷金残高判定
+  const deposit = parseFloat(document.getElementById('deposit').value || 0) || 0;
+  const depositEl = document.getElementById('summaryDeposit');
+  const depositAlertEl = document.getElementById('depositAlert');
+  if (deposit > 0) {
+    const balance = deposit - tenantTax;
+    if (balance >= 0) {
+      depositEl.textContent = fmt(balance) + ' 返金';
+      depositEl.style.color = '#2e7d32';
+      if (depositAlertEl) depositAlertEl.innerHTML = `<div class="alert" style="background:#e8f5e9;border:1px solid #66bb6a;color:#1b5e20;">✅ 敷金内で収まります。借主への返金額：<strong>${fmt(balance)}</strong></div>`;
+    } else {
+      depositEl.textContent = fmt(Math.abs(balance)) + ' 追加請求';
+      depositEl.style.color = '#c62828';
+      if (depositAlertEl) depositAlertEl.innerHTML = `<div class="alert alert-error">⚠️ 敷金超過。借主への追加請求が必要：<strong>${fmt(Math.abs(balance))}</strong></div>`;
+    }
+  } else {
+    depositEl.textContent = '敷金未入力';
+    depositEl.style.color = '#999';
+    if (depositAlertEl) depositAlertEl.innerHTML = '';
+  }
+
+  updateProposalSummary();
 }
 
 function fmt(n) {
@@ -615,6 +656,105 @@ function parseFmt(s) {
 ['landlordRate', 'tenantRate', 'taxRate'].forEach(id => {
   document.getElementById(id).addEventListener('input', calcTotals);
 });
+document.getElementById('deposit').addEventListener('input', calcTotals);
+
+// ========== リノベーション提案書 ==========
+let proposalCount = 0;
+const PROPOSAL_TEMPLATES = [
+  { title: 'アクセントクロス', work: 'リビング1面にアクセントクロス施工（サンゲツ等）', effect: '部屋の印象向上・ポータル写真映え' },
+  { title: 'LED照明化', work: '全室照明をLED器具に交換', effect: '光熱費訴求・次期入居者の満足度向上' },
+  { title: 'キッチン水栓交換', work: 'シングルレバー混合水栓に交換（浄水器対応）', effect: '使いやすさ向上・クリンネス訴求' },
+  { title: '洗面化粧台交換', work: '既存洗面台を新品に交換（TOTO・LIXIL等）', effect: '清潔感アップ・入居決定率向上' },
+  { title: 'ウォシュレット設置', work: 'トイレにウォシュレット（TOTO等）を新規取付', effect: '人気設備として入居者に訴求' },
+  { title: 'フローリング重ね張り', work: '既存フローリングの上からフロアタイル施工', effect: '印象刷新・傷みカバー' },
+  { title: 'モニター付きインターホン設置', work: 'カラーモニター付きインターホンに交換', effect: 'セキュリティ訴求・女性入居者に人気' },
+  { title: '宅配ボックス設置', work: '玄関前に宅配ボックスを設置', effect: '利便性訴求・ポータル訴求ポイント' },
+];
+
+function addProposal(template = {}) {
+  const idx = proposalCount++;
+  const list = document.getElementById('proposalList');
+  const div = document.createElement('div');
+  div.id = `proposal_${idx}`;
+  div.style.cssText = 'border:1px solid #c8e6c9; border-radius:6px; padding:12px; margin-bottom:10px; background:#f9fdf9;';
+  div.innerHTML = `
+    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+      <strong style="color:#2e7d32; font-size:13px;">提案 #${idx+1}</strong>
+      <div style="display:flex; gap:6px; align-items:center;">
+        <select style="font-size:11px; padding:3px; border:1px solid #ccc; border-radius:4px;" onchange="fillTemplate(${idx}, this.value)">
+          <option value="">── テンプレートから選ぶ ──</option>
+          ${PROPOSAL_TEMPLATES.map((t,i) => `<option value="${i}">${t.title}</option>`).join('')}
+        </select>
+        <button onclick="document.getElementById('proposal_${idx}').remove(); updateProposalSummary();" style="background:#e53935;color:#fff;border:none;border-radius:4px;padding:3px 8px;cursor:pointer;font-size:12px;">✕ 削除</button>
+      </div>
+    </div>
+    <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-bottom:8px;">
+      <div>
+        <label style="font-size:11px; color:#555;">提案内容（タイトル）</label>
+        <input type="text" id="p_title_${idx}" value="${template.title||''}" placeholder="例：アクセントクロス" style="width:100%; padding:5px; border:1px solid #ccc; border-radius:4px; font-size:12px;">
+      </div>
+      <div>
+        <label style="font-size:11px; color:#555;">概算費用（税込・円）</label>
+        <input type="number" id="p_cost_${idx}" value="${template.cost||''}" placeholder="例：80000" min="0" oninput="updateProposalSummary()" style="width:100%; padding:5px; border:1px solid #ccc; border-radius:4px; font-size:12px;">
+      </div>
+      <div>
+        <label style="font-size:11px; color:#555;">工事内容・仕様</label>
+        <input type="text" id="p_work_${idx}" value="${template.work||''}" placeholder="例：LGS 6畳クロス張替え" style="width:100%; padding:5px; border:1px solid #ccc; border-radius:4px; font-size:12px;">
+      </div>
+      <div>
+        <label style="font-size:11px; color:#555;">期待効果・訴求ポイント</label>
+        <input type="text" id="p_effect_${idx}" value="${template.effect||''}" placeholder="例：入居者への訴求力UP" style="width:100%; padding:5px; border:1px solid #ccc; border-radius:4px; font-size:12px;">
+      </div>
+    </div>
+    <div>
+      <label style="font-size:11px; color:#555;">📷 写真・参考イメージ（JPG/PNG）</label>
+      <input type="file" id="p_photo_${idx}" accept="image/*" style="font-size:11px; margin-top:3px;">
+      <span id="p_photo_preview_${idx}" style="font-size:10px; color:#2e7d32;"></span>
+    </div>
+  `;
+  list.appendChild(div);
+
+  // 写真プレビュー
+  document.getElementById(`p_photo_${idx}`).addEventListener('change', function() {
+    const el = document.getElementById(`p_photo_preview_${idx}`);
+    el.textContent = this.files[0] ? '✓ ' + this.files[0].name : '';
+  });
+}
+
+function fillTemplate(idx, templateIdx) {
+  if (templateIdx === '') return;
+  const t = PROPOSAL_TEMPLATES[parseInt(templateIdx)];
+  document.getElementById(`p_title_${idx}`).value = t.title;
+  document.getElementById(`p_work_${idx}`).value = t.work;
+  document.getElementById(`p_effect_${idx}`).value = t.effect;
+}
+
+function getProposals() {
+  const proposals = [];
+  document.querySelectorAll('[id^="proposal_"]').forEach(div => {
+    const idx = div.id.split('_')[1];
+    const cost = parseFloat(document.getElementById(`p_cost_${idx}`)?.value || 0) || 0;
+    proposals.push({
+      index: parseInt(idx),
+      title: document.getElementById(`p_title_${idx}`)?.value || '',
+      work_content: document.getElementById(`p_work_${idx}`)?.value || '',
+      expected_effect: document.getElementById(`p_effect_${idx}`)?.value || '',
+      estimated_cost: cost,
+    });
+  });
+  return proposals;
+}
+
+function updateProposalSummary() {
+  const proposals = getProposals();
+  const total = proposals.reduce((s, p) => s + (p.estimated_cost || 0), 0);
+  const el = document.getElementById('proposalSummary');
+  if (proposals.length > 0) {
+    el.textContent = `提案 ${proposals.length}件　合計概算：¥${total.toLocaleString('ja-JP')}円（税込）`;
+  } else {
+    el.textContent = '';
+  }
+}
 
 // ========== 案件履歴 ==========
 const HISTORY_KEY = 'ict_seisan_history';
@@ -803,6 +943,7 @@ async function exportExcel() {
     });
   });
 
+  const proposals = getProposals();
   const payload = {
     tenant_name: document.getElementById('tenantName').value,
     landlord_name: document.getElementById('landlordName').value,
@@ -817,14 +958,34 @@ async function exportExcel() {
     tenant_rate: parseFloat(document.getElementById('tenantRate').value),
     tax_rate: (parseFloat(document.getElementById('taxRate').value) || 10) / 100,
     items,
+    proposals,
   };
 
+  // 写真があればmultipart、なければJSON
+  const hasPhotos = proposals.some(p => {
+    const photoEl = document.getElementById(`p_photo_${p.index}`);
+    return photoEl && photoEl.files && photoEl.files[0];
+  });
+
+  let res;
   try {
-    const res = await fetch('/api/export', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
-    });
+    if (hasPhotos) {
+      const formData = new FormData();
+      formData.append('data', JSON.stringify(payload));
+      proposals.forEach(p => {
+        const photoEl = document.getElementById(`p_photo_${p.index}`);
+        if (photoEl && photoEl.files && photoEl.files[0]) {
+          formData.append(`photo_${p.index}`, photoEl.files[0]);
+        }
+      });
+      res = await fetch('/api/export', { method: 'POST', body: formData });
+    } else {
+      res = await fetch('/api/export', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+    }
 
     if (!res.ok) {
       const err = await res.json();

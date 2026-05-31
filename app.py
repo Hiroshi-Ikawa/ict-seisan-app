@@ -2,8 +2,10 @@ import os
 import base64
 import json
 import re
+import tempfile
 from datetime import datetime
 from io import BytesIO
+from PIL import Image as PILImage
 
 from flask import Flask, request, jsonify, render_template, send_file
 from dotenv import load_dotenv
@@ -11,6 +13,7 @@ import anthropic
 import openpyxl
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 from openpyxl.utils import get_column_letter
+from openpyxl.drawing.image import Image as XLImage
 
 load_dotenv()
 
@@ -289,11 +292,22 @@ def analyze():
 @app.route("/api/export", methods=["POST"])
 def export():
     try:
-        data = request.get_json()
+        # multipart（写真あり）とJSON両対応
+        if request.content_type and request.content_type.startswith("multipart/form-data"):
+            data = json.loads(request.form.get("data", "{}"))
+            photos = {}  # {proposal_index: bytes}
+            for key in request.files:
+                if key.startswith("photo_"):
+                    idx = int(key.split("_")[1])
+                    photos[idx] = request.files[key].read()
+        else:
+            data = request.get_json()
+            photos = {}
+
         if not data:
             return jsonify({"error": "データが見つかりません"}), 400
 
-        wb = create_excel(data)
+        wb = create_excel(data, photos=photos)
 
         output = BytesIO()
         wb.save(output)
@@ -356,23 +370,27 @@ def fill_row_borders(ws, row, start_col, end_col, bg_color=None):
             c.fill = PatternFill(start_color=bg_color, end_color=bg_color, fill_type="solid")
 
 
-def create_excel(data):
+def create_excel(data, photos=None):
     wb = openpyxl.Workbook()
+    if photos is None:
+        photos = {}
 
-    property_name = data.get("property_name", "")
-    estimate_number = data.get("estimate_number", "")
-    estimate_date = data.get("estimate_date", "")
-    company_name = data.get("company_name", "")
-    staff_name = data.get("staff_name", "")
-    tenant_name = data.get("tenant_name", "")
+    property_name    = data.get("property_name", "")
+    estimate_number  = data.get("estimate_number", "")
+    estimate_date    = data.get("estimate_date", "")
+    company_name     = data.get("company_name", "")
+    staff_name       = data.get("staff_name", "")
+    tenant_name      = data.get("tenant_name", "")
+    landlord_name    = data.get("landlord_name", "")
     property_address = data.get("property_address", "")
-    deposit = float(data.get("deposit", 0) or 0)
-    landlord_rate = float(data.get("landlord_rate", 1.15) or 1.15)
-    tenant_rate = float(data.get("tenant_rate", 1.20) or 1.20)
-    tax_rate = float(data.get("tax_rate", 0.10) or 0.10)
-    items = data.get("items", [])
+    deposit          = float(data.get("deposit", 0) or 0)
+    landlord_rate    = float(data.get("landlord_rate", 1.15) or 1.15)
+    tenant_rate      = float(data.get("tenant_rate", 1.20) or 1.20)
+    tax_rate         = float(data.get("tax_rate", 0.10) or 0.10)
+    items            = data.get("items", [])
+    proposals        = data.get("proposals", [])
 
-    # ① 負担割合表シート
+    # ① 負担割合表
     ws1 = wb.active
     ws1.title = "負担割合表"
     _build_estimate_sheet(ws1, data, items, landlord_rate, tenant_rate, tax_rate,
@@ -386,6 +404,11 @@ def create_excel(data):
     # ③ 借主請求書
     ws3 = wb.create_sheet("借主請求書")
     _build_invoice_sheet(ws3, data, items, landlord_rate, tenant_rate, tax_rate, mode="tenant")
+
+    # ④ リノベーション提案書（提案がある場合）
+    if proposals:
+        ws4 = wb.create_sheet("リノベーション提案")
+        _build_proposal_sheet(ws4, data, proposals, photos)
 
     return wb
 
@@ -806,6 +829,198 @@ def _build_invoice_sheet(ws, data, items, landlord_rate, tenant_rate, tax_rate, 
     ws.row_dimensions[37].height = 22
 
     ws.freeze_panes = ws.cell(row=11, column=1)
+
+
+def _build_proposal_sheet(ws, data, proposals, photos=None):
+    """リノベーション提案書シートを生成"""
+    if photos is None:
+        photos = {}
+
+    property_name    = data.get("property_name", "")
+    property_address = data.get("property_address", "")
+    staff_name       = data.get("staff_name", "")
+    landlord_name    = data.get("landlord_name", "")
+    issue_date       = datetime.now().strftime("%Y年%m月%d日")
+
+    # 列幅設定
+    col_w = {"A":5,"B":28,"C":28,"D":22,"E":14,"F":22}
+    for col, w in col_w.items():
+        ws.column_dimensions[col].width = w
+
+    # ── Row1: 発行日
+    ws["A1"] = f"発行日：{issue_date}"
+    ws["A1"].font = Font(name="Yu Gothic UI", size=9, color="555555")
+    ws.row_dimensions[1].height = 14
+
+    # ── Row2: タイトル
+    ws.merge_cells("B2:E2")
+    c = ws["B2"]; c.value = "リノベーション提案書"
+    c.font = Font(name="Yu Gothic UI", bold=True, size=20, color="2E7D32")
+    c.alignment = Alignment(horizontal="center", vertical="center")
+    ws.row_dimensions[2].height = 34
+
+    # ── Row3: 宛名（左）+ 会社名（右）
+    ws.merge_cells("A3:C3")
+    c = ws["A3"]; c.value = f"{landlord_name}　様" if landlord_name else "　　　　　様"
+    c.font = Font(name="Yu Gothic UI", bold=True, size=14)
+    c.alignment = Alignment(horizontal="left", vertical="center")
+    ws.merge_cells("D3:F3")
+    c = ws["D3"]; c.value = "株式会社 ライフアドバンス"
+    c.font = Font(name="Yu Gothic UI", bold=True, size=11, color="1F3864")
+    c.alignment = Alignment(horizontal="right", vertical="center")
+    ws.row_dimensions[3].height = 26
+
+    # ── Row4: キャッチコピー + 会社住所
+    ws.merge_cells("A4:C4")
+    c = ws["A4"]; c.value = "次の入居者獲得に向けた、付加価値向上のご提案です。"
+    c.font = Font(name="Yu Gothic UI", size=10, color="2E7D32", bold=True)
+    c.alignment = Alignment(horizontal="left", vertical="center")
+    ws.merge_cells("D4:F4")
+    c = ws["D4"]; c.value = "所在地：東京都渋谷区東3-25-11 TOKYU REIT恵比寿ビル4階"
+    c.font = Font(name="Yu Gothic UI", size=8, color="444444")
+    c.alignment = Alignment(horizontal="right", vertical="center")
+    ws.row_dimensions[4].height = 20
+
+    # ── Row5-7: 物件情報
+    prop_rows = [("物件名", property_name), ("物件住所", property_address), ("担当", staff_name)]
+    for idx, (label, val) in enumerate(prop_rows):
+        rn = 5 + idx
+        ws.merge_cells(start_row=rn, start_column=1, end_row=rn, end_column=2)
+        c = ws.cell(row=rn, column=1, value=label)
+        c.font = Font(name="Yu Gothic UI", size=9, bold=True)
+        c.fill = PatternFill(start_color="E8F5E9", end_color="E8F5E9", fill_type="solid")
+        c.alignment = Alignment(horizontal="center", vertical="center")
+        c.border = make_border()
+        ws.merge_cells(start_row=rn, start_column=3, end_row=rn, end_column=6)
+        c = ws.cell(row=rn, column=3, value=val)
+        c.font = Font(name="Yu Gothic UI", size=9)
+        c.border = make_border()
+        ws.row_dimensions[rn].height = 16
+
+    ws.row_dimensions[8].height = 6  # スペーサー
+
+    # ── Row9: 概要説明
+    ws.merge_cells("A9:F9")
+    c = ws["A9"]
+    c.value = "【ご提案の目的】原状回復工事と同時に行うことで、工事費を抑えながら物件の魅力を高め、空室期間の短縮・賃料維持・次期入居者の獲得に繋げます。"
+    c.font = Font(name="Yu Gothic UI", size=9, color="333333")
+    c.fill = PatternFill(start_color="F1F8E9", end_color="F1F8E9", fill_type="solid")
+    c.border = make_border()
+    c.alignment = Alignment(horizontal="left", vertical="center", wrap_text=True)
+    ws.row_dimensions[9].height = 28
+
+    ws.row_dimensions[10].height = 6
+
+    # ── Row11-12: テーブルヘッダー
+    row_h = 11
+    ws.merge_cells(start_row=row_h, start_column=1, end_row=row_h+1, end_column=1)
+    c = ws.cell(row=row_h, column=1, value="No."); apply_header_style(c, "2E7D32")
+    ws.merge_cells(start_row=row_h, start_column=2, end_row=row_h+1, end_column=2)
+    c = ws.cell(row=row_h, column=2, value="提案内容"); apply_header_style(c, "2E7D32")
+    ws.merge_cells(start_row=row_h, start_column=3, end_row=row_h+1, end_column=3)
+    c = ws.cell(row=row_h, column=3, value="工事内容・仕様"); apply_header_style(c, "2E7D32")
+    ws.merge_cells(start_row=row_h, start_column=4, end_row=row_h+1, end_column=4)
+    c = ws.cell(row=row_h, column=4, value="期待効果"); apply_header_style(c, "2E7D32")
+    ws.merge_cells(start_row=row_h, start_column=5, end_row=row_h+1, end_column=5)
+    c = ws.cell(row=row_h, column=5, value="概算費用（税込）"); apply_header_style(c, "2E7D32")
+    ws.merge_cells(start_row=row_h, start_column=6, end_row=row_h+1, end_column=6)
+    c = ws.cell(row=row_h, column=6, value="写真・参考イメージ"); apply_header_style(c, "2E7D32")
+    ws.row_dimensions[row_h].height = 20
+    ws.row_dimensions[row_h+1].height = 16
+
+    # ── データ行
+    PHOTO_ROW_HEIGHT = 90
+    r = 13
+    total_cost = 0
+    temp_files = []
+
+    for i, prop in enumerate(proposals):
+        bg = "F9FBF0" if i % 2 == 0 else "FFFFFF"
+        title = prop.get("title", "")
+        work  = prop.get("work_content", "")
+        effect = prop.get("expected_effect", "")
+        cost  = int(float(prop.get("estimated_cost", 0) or 0))
+        total_cost += cost
+
+        for col in range(1, 7):
+            c = ws.cell(row=r, column=col)
+            c.fill = PatternFill(start_color=bg, end_color=bg, fill_type="solid")
+            c.border = make_border()
+            c.font = Font(name="Yu Gothic UI", size=10)
+
+        ws.cell(row=r, column=1, value=i+1).alignment = Alignment(horizontal="center", vertical="top")
+        c = ws.cell(row=r, column=2, value=title)
+        c.alignment = Alignment(horizontal="left", vertical="top", wrap_text=True)
+        c.font = Font(name="Yu Gothic UI", size=10, bold=True)
+        ws.cell(row=r, column=3, value=work).alignment = Alignment(horizontal="left", vertical="top", wrap_text=True)
+        ws.cell(row=r, column=4, value=effect).alignment = Alignment(horizontal="left", vertical="top", wrap_text=True)
+        c = ws.cell(row=r, column=5, value=cost)
+        c.number_format = '#,##0"円"'; c.alignment = Alignment(horizontal="right", vertical="top")
+
+        # 写真埋め込み
+        photo_bytes = photos.get(i)
+        if photo_bytes:
+            try:
+                with tempfile.NamedTemporaryFile(suffix=".jpg", delete=False) as tmp:
+                    # JPEG変換
+                    img = PILImage.open(BytesIO(photo_bytes))
+                    img = img.convert("RGB")
+                    # 縮小（最大 220x160px）
+                    img.thumbnail((220, 160), PILImage.LANCZOS)
+                    img.save(tmp.name, "JPEG", quality=85)
+                    temp_files.append(tmp.name)
+                xl_img = XLImage(tmp.name)
+                xl_img.width = 180
+                xl_img.height = 130
+                col_letter = get_column_letter(6)
+                ws.add_image(xl_img, f"{col_letter}{r}")
+                ws.row_dimensions[r].height = PHOTO_ROW_HEIGHT
+            except Exception:
+                ws.cell(row=r, column=6, value="※写真を手動で挿入してください")
+                ws.row_dimensions[r].height = 50
+        else:
+            ws.cell(row=r, column=6, value="※写真を手動で挿入してください")
+            ws.cell(row=r, column=6).font = Font(name="Yu Gothic UI", size=8, color="999999")
+            ws.row_dimensions[r].height = 50
+
+        r += 1
+
+    # ── 合計行
+    fill_row_borders(ws, r, 1, 6, "E8F5E9")
+    ws.merge_cells(start_row=r, start_column=1, end_row=r, end_column=4)
+    c = ws.cell(row=r, column=1, value="提案合計（税込）")
+    c.font = Font(name="Yu Gothic UI", bold=True, size=11)
+    c.fill = PatternFill(start_color="E8F5E9", end_color="E8F5E9", fill_type="solid")
+    c.alignment = Alignment(horizontal="right", vertical="center"); c.border = make_border()
+    c = ws.cell(row=r, column=5, value=total_cost)
+    c.number_format = '#,##0"円"'
+    c.font = Font(name="Yu Gothic UI", bold=True, size=12, color="2E7D32")
+    apply_data_style(c, bg_color="E8F5E9", bold=True, align="right")
+    ws.row_dimensions[r].height = 22
+    r += 2
+
+    # ── 備考・クロージング
+    ws.merge_cells(start_row=r, start_column=1, end_row=r, end_column=6)
+    c = ws.cell(row=r, column=1, value="【ご注意】上記概算費用は現時点での目安です。現地確認後に正式なお見積りをご提出いたします。")
+    c.font = Font(name="Yu Gothic UI", size=9, color="666666")
+    c.alignment = Alignment(horizontal="left", vertical="center", wrap_text=True)
+    ws.row_dimensions[r].height = 18
+    r += 1
+    ws.merge_cells(start_row=r, start_column=1, end_row=r, end_column=6)
+    c = ws.cell(row=r, column=1,
+                value="ご不明な点・ご要望はお気軽にご相談ください。恵比寿不動産　TEL: 03-6421-0544")
+    c.font = Font(name="Yu Gothic UI", size=9, color="1F3864", bold=True)
+    c.alignment = Alignment(horizontal="center", vertical="center")
+    ws.row_dimensions[r].height = 18
+
+    ws.freeze_panes = "A13"
+
+    # 一時ファイル削除
+    for tmp_path in temp_files:
+        try:
+            os.unlink(tmp_path)
+        except Exception:
+            pass
 
 
 if __name__ == "__main__":
