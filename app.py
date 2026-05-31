@@ -997,7 +997,7 @@ def _build_invoice_sheet(ws, data, items, landlord_rate, tenant_rate, tax_rate, 
     ws.row_dimensions[1].height = 14
 
     ws.merge_cells("C2:G2")
-    c = ws["C2"]; c.value = "ご請求書"
+    c = ws["C2"]; c.value = "借主様　ご請求書" if mode == "tenant" else "貸主様　ご請求書"
     c.font = Font(name="Yu Gothic UI", bold=True, size=20, color="1F3864")
     c.alignment = Alignment(horizontal="center", vertical="center")
     ws.row_dimensions[2].height = 34
