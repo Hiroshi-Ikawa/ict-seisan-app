@@ -483,7 +483,10 @@ JSON形式のみで回答（説明文不要）：
 {{
   "tenant_name": "借主氏名（不明なら空文字）",
   "landlord_name": "貸主氏名（不明なら空文字）",
-  "property_name": "物件名（不明なら空文字）",
+  "property_name": "物件名・部屋番号を含めた名称（不明なら空文字）",
+  "property_address": "物件の住所・所在地（番地まで含めて記載、不明なら空文字）",
+  "deposit": "敷金金額（数値のみ、不明なら0）",
+  "monthly_rent": "月額賃料（数値のみ、不明なら0）",
   "documents_analyzed": ["読み取れた書類名を列挙"],
   "special_clauses": ["全書類から抽出した重要な特約・合意内容を簡潔に列挙"],
   "burden_assignments": {{
