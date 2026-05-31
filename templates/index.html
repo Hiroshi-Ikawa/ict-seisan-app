@@ -360,49 +360,50 @@
       </div>
     </div>
 
-    <!-- STEP 5: リノベーション提案書 -->
-    <div class="card" style="border-left:4px solid #2e7d32;">
-      <div class="card-header" style="background:#2e7d32;">
-        <span class="step" style="background:#F4B942; color:#2e7d32;">5</span>
-        リノベーション提案書（任意）― 次の入居者獲得に向けた付加価値工事の提案
-      </div>
-      <div class="card-body">
-        <p style="font-size:12px; color:#555; margin-bottom:12px;">
-          原状回復工事と同時に行うと費用を抑えられる追加提案を記入してください。
-          写真をアップロードするとExcelに自動埋め込みされます。
-        </p>
-        <div id="proposalList"></div>
-        <button class="btn btn-secondary" onclick="addProposal()" style="margin-top:8px; font-size:12px;">＋ 提案を追加</button>
-        <div id="proposalSummary" style="margin-top:10px; font-size:13px; font-weight:bold; color:#2e7d32;"></div>
-      </div>
-    </div>
-
-    <!-- STEP 6: 出力 -->
-    <div class="card">
-      <div class="card-header">
-        <span class="step">6</span>
-        Excel出力 / PDF印刷
-      </div>
-      <div class="card-body">
-        <div id="depositAlert" style="margin-bottom:10px;"></div>
-        <div class="action-bar" style="display:flex; gap:10px; flex-wrap:wrap;">
-          <button class="btn btn-success" onclick="exportExcel()">
-            📊 精算書Excelをダウンロード
-          </button>
-          <button class="btn" style="background:#e65100; color:#fff;" onclick="printInvoice('tenant')">
-            🖨️ 借主請求書を印刷
-          </button>
-          <button class="btn" style="background:#1565c0; color:#fff;" onclick="printInvoice('landlord')">
-            🖨️ 貸主請求書を印刷
-          </button>
-        </div>
-        <p style="font-size:12px; color:#888; margin-top:10px; text-align:right;">
-          ① 負担割合表　② 貸主請求書　③ 借主請求書　④ リノベーション提案（提案ありの場合）
-        </p>
-      </div>
-    </div>
-
   </div><!-- /sections -->
+
+  <!-- 提案書（常に表示） -->
+  <div class="card" style="border-left:4px solid #2e7d32;">
+    <div class="card-header" style="background:#2e7d32;">
+      <span class="step" style="background:#F4B942; color:#2e7d32;">5</span>
+      リノベーション提案書（任意）― 次の入居者獲得に向けた付加価値工事の提案
+    </div>
+    <div class="card-body">
+      <p style="font-size:12px; color:#555; margin-bottom:12px;">
+        原状回復工事と同時に行うと費用を抑えられる追加提案を記入してください。
+        写真をアップロードするとExcelに自動埋め込みされます。
+      </p>
+      <div id="proposalList"></div>
+      <button class="btn btn-secondary" onclick="addProposal()" style="margin-top:8px; font-size:12px;">＋ 提案を追加</button>
+      <div id="proposalSummary" style="margin-top:10px; font-size:13px; font-weight:bold; color:#2e7d32;"></div>
+    </div>
+  </div>
+
+  <!-- Excel出力（常に表示） -->
+  <div class="card">
+    <div class="card-header">
+      <span class="step">6</span>
+      Excel出力 / PDF印刷
+    </div>
+    <div class="card-body">
+      <div id="depositAlert" style="margin-bottom:10px;"></div>
+      <div class="action-bar" style="display:flex; gap:10px; flex-wrap:wrap;">
+        <button class="btn btn-success" onclick="exportExcel()">
+          📊 精算書Excelをダウンロード
+        </button>
+        <button class="btn" style="background:#e65100; color:#fff;" onclick="printInvoice('tenant')">
+          🖨️ 借主請求書を印刷
+        </button>
+        <button class="btn" style="background:#1565c0; color:#fff;" onclick="printInvoice('landlord')">
+          🖨️ 貸主請求書を印刷
+        </button>
+      </div>
+      <p style="font-size:12px; color:#888; margin-top:10px; text-align:right;">
+        ① 負担割合表　② 貸主様ご請求書　③ 借主様ご請求書　④ リノベーション提案（提案ありの場合）
+      </p>
+    </div>
+  </div>
+
 </div>
 
 <script>
@@ -678,7 +679,8 @@ async function analyzeContract() {
 
     document.getElementById('contractResult').style.display = 'flex';
     document.getElementById('contractResult').style.flexDirection = 'column';
-    showAlert(`${contractFiles.length}件の書類を総合解析しました。「適用」ボタンで明細テーブルに反映できます。`, 'success');
+    document.getElementById('sections').classList.add('visible');
+    showAlert(`${contractFiles.length}件の書類を総合解析しました。物件情報が自動入力されました。「適用」ボタンで負担区分を明細テーブルに反映できます。`, 'success');
   } catch (e) {
     showAlert('契約書解析エラー：' + e.message, 'error');
   } finally {

@@ -377,5 +377,5 @@ input[type="number"], input[type="text"], select {
   .summary-grid { grid-template-columns: 1fr; }
 }
 
-#sections { display: none; }
+#sections { display: block; }
 #sections.visible { display: block; }
