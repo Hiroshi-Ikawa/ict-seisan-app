@@ -58,9 +58,133 @@ DEFAULT_BURDEN = {
 }
 
 
+# 東京都ガイドラインのデフォルト負担（特約なし時）
+TOKYO_GUIDELINE_BURDEN = {
+    "クロス張替え（全面）":        {"burden": "貸", "reason": "経年劣化・自然消耗（東京都ガイドライン）"},
+    "クロス張替え（部分）":        {"burden": "借", "reason": "故意・過失による損傷（東京都ガイドライン）"},
+    "クッションフロア張替え":      {"burden": "借", "reason": "借主使用による損耗・6年償却（東京都ガイドライン）"},
+    "フローリング補修・部分貼替え":{"burden": "両", "reason": "程度・原因による折半（東京都ガイドライン）"},
+    "畳替え":                     {"burden": "貸", "reason": "通常使用による交換（東京都ガイドライン）"},
+    "ハウスクリーニング（基本）":  {"burden": "貸", "reason": "通常清掃実施の場合は貸主負担（東京都ガイドライン）"},
+    "エアコンクリーニング":        {"burden": "貸", "reason": "臭い等なければ貸主負担（東京都ガイドライン）"},
+    "浴室・強化クリーニング":      {"burden": "借", "reason": "清掃怠慢による汚損（東京都ガイドライン）"},
+    "照明器具交換・修繕":          {"burden": "貸", "reason": "設備の経年交換（東京都ガイドライン）"},
+    "給湯器・設備修繕":            {"burden": "貸", "reason": "設備の経年劣化（東京都ガイドライン）"},
+    "鍵交換":                     {"burden": "借", "reason": "紛失・破損による交換（東京都ガイドライン）"},
+    "リペア補修（床・壁複数箇所）":{"burden": "借", "reason": "故意・過失による損傷（東京都ガイドライン）"},
+    "残置物・廃棄物処分":          {"burden": "借", "reason": "借主残置（東京都ガイドライン）"},
+    "消毒・防虫処理":              {"burden": "借", "reason": "借主使用による必要（東京都ガイドライン）"},
+    "諸経費（パーキング・交通費等）":{"burden": "貸", "reason": "工事付帯費用（東京都ガイドライン）"},
+    "その他（自由入力）":          {"burden": "借", "reason": "内容確認が必要"},
+}
+
+
 @app.route("/")
 def index():
     return render_template("index.html", categories=WORK_CATEGORIES)
+
+
+@app.route("/api/analyze-contract", methods=["POST"])
+def analyze_contract():
+    """賃貸借契約書PDFを解析して特約内容と負担区分を返す"""
+    if "pdf" not in request.files:
+        return jsonify({"error": "PDFファイルが見つかりません"}), 400
+    pdf_file = request.files["pdf"]
+    if pdf_file.filename == "":
+        return jsonify({"error": "ファイルが選択されていません"}), 400
+    try:
+        pdf_bytes = pdf_file.read()
+        pdf_b64 = base64.standard_b64encode(pdf_bytes).decode("utf-8")
+
+        categories_str = "\n".join(f"- {c}" for c in WORK_CATEGORIES)
+        guideline_str = "\n".join(
+            f'- {k}: デフォルト{v["burden"]}（{v["reason"]}）'
+            for k, v in TOKYO_GUIDELINE_BURDEN.items()
+        )
+
+        prompt = f"""この賃貸借契約書（特に「頭書(8)特約事項」「第16条 明渡し時の原状回復」）を詳しく読んでください。
+
+以下の工事項目について、特約事項の記載を確認し、各項目の負担区分を判定してください。
+
+【工事項目リスト】
+{categories_str}
+
+【判定ルール】
+1. 特約事項に明記がある場合 → 特約の内容に従う（basis: "契約特約"）
+2. 特約事項に記載がない場合 → 東京都ガイドラインに従う（basis: "東京都ガイドライン"）
+
+【東京都ガイドライン デフォルト値】
+{guideline_str}
+
+【重要な判定ポイント】
+- 「クリーニング費用を借主負担とする」特約があれば → ハウスクリーニング・エアコンクリーニング・浴室クリーニング等 → 借主負担
+- 「使用状況にかかわらず」という記載があれば → ガイドライン原則を上書きして借主負担
+- 「故意・過失による場合のみ」という記載 → ガイドラインに従う
+- 禁煙特約がある場合 → タバコ関連は借主負担
+
+JSON形式のみで回答してください（説明文不要）：
+{{
+  "tenant_name": "借主氏名（不明なら空文字）",
+  "landlord_name": "貸主氏名（不明なら空文字）",
+  "property_name": "物件名（不明なら空文字）",
+  "special_clauses": ["特約の主要内容を簡潔に列挙"],
+  "burden_assignments": {{
+    "クロス張替え（全面）": {{"burden": "貸", "basis": "東京都ガイドライン", "reason": "経年劣化"}},
+    "クロス張替え（部分）": {{"burden": "借", "basis": "東京都ガイドライン", "reason": "故意・過失"}},
+    "クッションフロア張替え": {{"burden": "借", "basis": "東京都ガイドライン", "reason": "借主使用"}},
+    "フローリング補修・部分貼替え": {{"burden": "両", "basis": "東京都ガイドライン", "reason": "程度による"}},
+    "畳替え": {{"burden": "貸", "basis": "東京都ガイドライン", "reason": "通常交換"}},
+    "ハウスクリーニング（基本）": {{"burden": "借 or 貸", "basis": "契約特約 or 東京都ガイドライン", "reason": "理由"}},
+    "エアコンクリーニング": {{"burden": "借 or 貸", "basis": "契約特約 or 東京都ガイドライン", "reason": "理由"}},
+    "浴室・強化クリーニング": {{"burden": "借", "basis": "東京都ガイドライン", "reason": "清掃怠慢"}},
+    "照明器具交換・修繕": {{"burden": "貸", "basis": "東京都ガイドライン", "reason": "設備経年"}},
+    "給湯器・設備修繕": {{"burden": "貸", "basis": "東京都ガイドライン", "reason": "設備経年"}},
+    "鍵交換": {{"burden": "借", "basis": "東京都ガイドライン", "reason": "紛失・破損"}},
+    "リペア補修（床・壁複数箇所）": {{"burden": "借", "basis": "東京都ガイドライン", "reason": "故意・過失"}},
+    "残置物・廃棄物処分": {{"burden": "借", "basis": "東京都ガイドライン", "reason": "借主残置"}},
+    "消毒・防虫処理": {{"burden": "借", "basis": "東京都ガイドライン", "reason": "借主使用"}},
+    "諸経費（パーキング・交通費等）": {{"burden": "貸", "basis": "東京都ガイドライン", "reason": "工事付帯費"}},
+    "その他（自由入力）": {{"burden": "借", "basis": "東京都ガイドライン", "reason": "要確認"}}
+  }}
+}}
+
+burden値は必ず "貸"、"借"、"両" のいずれか。"""
+
+        message = client.messages.create(
+            model="claude-sonnet-4-5",
+            max_tokens=4096,
+            messages=[
+                {
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "document",
+                            "source": {
+                                "type": "base64",
+                                "media_type": "application/pdf",
+                                "data": pdf_b64,
+                            },
+                        },
+                        {"type": "text", "text": prompt},
+                    ],
+                }
+            ],
+        )
+
+        response_text = message.content[0].text.strip()
+        json_match = re.search(r"\{.*\}", response_text, re.DOTALL)
+        if json_match:
+            response_text = json_match.group()
+
+        result = json.loads(response_text)
+        return jsonify(result)
+
+    except json.JSONDecodeError as e:
+        return jsonify({"error": f"解析結果のパースエラー: {str(e)}"}), 500
+    except anthropic.APIError as e:
+        return jsonify({"error": f"Claude APIエラー: {str(e)}"}), 500
+    except Exception as e:
+        return jsonify({"error": f"契約書解析エラー: {str(e)}"}), 500
 
 
 @app.route("/api/analyze", methods=["POST"])

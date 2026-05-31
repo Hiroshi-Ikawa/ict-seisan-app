@@ -32,6 +32,38 @@
 <div class="container">
   <div id="alert-area"></div>
 
+  <!-- 契約書解析（任意）-->
+  <div class="card" style="border-left:4px solid #1565c0;">
+    <div class="card-header" style="background:#1565c0;">
+      <span class="step" style="background:#F4B942; color:#1565c0;">📄</span>
+      賃貸借契約書アップロード（任意）― 特約を読み取り負担区分を自動判定
+    </div>
+    <div class="card-body">
+      <div style="display:flex; gap:16px; align-items:flex-start; flex-wrap:wrap;">
+        <div style="flex:1; min-width:260px;">
+          <div class="drop-zone" id="contractDropZone" style="padding:20px;" onclick="document.getElementById('contractInput').click()">
+            <div class="icon" style="font-size:28px;">📋</div>
+            <p style="font-size:12px; margin:6px 0;">賃貸借契約書PDFをドロップ<br>または<strong>クリックして選択</strong></p>
+            <div class="file-name" id="contractFileName" style="font-size:11px;"></div>
+            <input type="file" id="contractInput" accept=".pdf" style="display:none">
+          </div>
+          <div style="margin-top:8px; text-align:center;">
+            <button class="btn btn-primary" id="contractBtn" disabled onclick="analyzeContract()" style="font-size:12px; padding:6px 14px;">
+              🔍 特約を解析して負担区分を判定
+            </button>
+          </div>
+        </div>
+        <div id="contractResult" style="flex:2; min-width:280px; display:none;">
+          <div id="specialClauses" style="background:#f0f4ff; border-radius:6px; padding:10px; margin-bottom:10px; font-size:12px;"></div>
+          <div id="burdenTable" style="font-size:11px;"></div>
+          <button class="btn btn-success" onclick="applyContractBurdens()" style="margin-top:8px; font-size:12px; padding:5px 14px;">
+            ✅ この負担区分を明細テーブルに適用
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <!-- STEP 1: PDF Upload -->
   <div class="card">
     <div class="card-header">
@@ -253,6 +285,93 @@ const BURDEN_MAP = {
 };
 
 let rowCount = 0;
+let contractBurdens = {};  // 契約書から取得した負担区分
+
+// ── 契約書解析 ─────────────────────────────────
+const contractInput = document.getElementById('contractInput');
+const contractDropZone = document.getElementById('contractDropZone');
+const contractBtn = document.getElementById('contractBtn');
+
+contractDropZone.addEventListener('dragover', e => { e.preventDefault(); contractDropZone.classList.add('dragover'); });
+contractDropZone.addEventListener('dragleave', () => contractDropZone.classList.remove('dragover'));
+contractDropZone.addEventListener('drop', e => {
+  e.preventDefault(); contractDropZone.classList.remove('dragover');
+  const file = e.dataTransfer.files[0];
+  if (file && file.type === 'application/pdf') {
+    contractInput.files = e.dataTransfer.files;
+    document.getElementById('contractFileName').textContent = '📎 ' + file.name;
+    contractBtn.disabled = false;
+  }
+});
+contractInput.addEventListener('change', () => {
+  if (contractInput.files[0]) {
+    document.getElementById('contractFileName').textContent = '📎 ' + contractInput.files[0].name;
+    contractBtn.disabled = false;
+  }
+});
+
+async function analyzeContract() {
+  const file = contractInput.files[0];
+  if (!file) return;
+  contractBtn.disabled = true;
+  contractBtn.textContent = '🔍 解析中...';
+  const formData = new FormData();
+  formData.append('pdf', file);
+  try {
+    const res = await fetch('/api/analyze-contract', { method: 'POST', body: formData });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || '解析エラー');
+
+    contractBurdens = data.burden_assignments || {};
+
+    // 借主名・貸主名・物件名を自動入力
+    if (data.tenant_name) document.getElementById('tenantName').value = data.tenant_name;
+    if (data.landlord_name) document.getElementById('landlordName').value = data.landlord_name;
+    if (data.property_name && !document.getElementById('propertyName').value)
+      document.getElementById('propertyName').value = data.property_name;
+
+    // 特約表示
+    const clauses = data.special_clauses || [];
+    document.getElementById('specialClauses').innerHTML =
+      '<strong>📌 抽出された特約：</strong><br>' +
+      (clauses.length ? clauses.map(c => `・${c}`).join('<br>') : '特約の明記なし → 全項目を東京都ガイドラインで判定');
+
+    // 負担区分テーブル
+    const rows = Object.entries(contractBurdens).map(([cat, info]) => {
+      const color = info.burden === '借' ? '#fce4d6' : (info.burden === '貸' ? '#d9e1f2' : '#e2efda');
+      const badge = info.basis === '契約特約' ? '<span style="background:#e53935;color:#fff;padding:1px 5px;border-radius:3px;font-size:10px;">特約</span>' :
+                    '<span style="background:#1565c0;color:#fff;padding:1px 5px;border-radius:3px;font-size:10px;">ガイドライン</span>';
+      return `<tr style="background:${color}"><td style="padding:3px 6px;">${cat}</td><td style="padding:3px 6px;text-align:center;font-weight:bold;">${info.burden}</td><td style="padding:3px 6px;">${badge} ${info.reason}</td></tr>`;
+    }).join('');
+    document.getElementById('burdenTable').innerHTML =
+      `<table style="width:100%;border-collapse:collapse;"><thead><tr style="background:#1F3864;color:#fff;"><th style="padding:4px 6px;text-align:left;">工事項目</th><th style="padding:4px 6px;">負担</th><th style="padding:4px 6px;text-align:left;">根拠・理由</th></tr></thead><tbody>${rows}</tbody></table>`;
+
+    document.getElementById('contractResult').style.display = 'flex';
+    document.getElementById('contractResult').style.flexDirection = 'column';
+    showAlert('契約書の解析が完了しました。「適用」ボタンで明細テーブルに反映できます。', 'success');
+  } catch (e) {
+    showAlert('契約書解析エラー：' + e.message, 'error');
+  } finally {
+    contractBtn.disabled = false;
+    contractBtn.textContent = '🔍 特約を解析して負担区分を判定';
+  }
+}
+
+function applyContractBurdens() {
+  if (!Object.keys(contractBurdens).length) return;
+  document.querySelectorAll('#tableBody tr').forEach(tr => {
+    const categorySelect = tr.querySelectorAll('select')[0];
+    const burdenSelect = tr.querySelectorAll('select')[1];
+    if (!categorySelect || !burdenSelect) return;
+    const cat = categorySelect.value;
+    if (contractBurdens[cat]) {
+      burdenSelect.value = contractBurdens[cat].burden;
+      updateRowClass(tr, contractBurdens[cat].burden);
+    }
+  });
+  calcTotals();
+  showAlert('負担区分を契約書・ガイドライン判定で更新しました。', 'success');
+}
 
 // ドロップゾーン
 const dropZone = document.getElementById('dropZone');
